@@ -77,7 +77,7 @@ This document describes the available skills (guided workflows) for the Redfish 
 
 **Workflow:**
 
-1. Identify the target switch by its `switch_id` from the server config (`list_hosts`, `list_hosts_by_tag`, etc.).
+1. Identify the target switch by its `switch_id` using `list_switches`.
 2. Use `junos_run_command(switch_id, command)` with the appropriate Junos CLI command.
 
 **Common commands:**

@@ -74,6 +74,7 @@ See `*.example.yaml` files for format. The config file supports a top-level `ser
 Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor`, and `tags`.
 
 - `list_hosts`: Get the full mapping of all known servers.
+- `list_switches`: Get all switches from the `switches:` section.
 - `get_host(server_id)` / `get_hosts(server_ids)`: Get configuration for specific servers.
 - `list_hosts_by_lab(lab)` / `list_hosts_by_tag(tag)`: Filter servers for batch operations.
 

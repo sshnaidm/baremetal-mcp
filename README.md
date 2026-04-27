@@ -144,6 +144,18 @@ srv-hpe-02:
   lab: "lab-b"
 ```
 
+### Switches Configuration
+
+Switches are defined under a separate `switches:` section in the same file. Only `hostname` is required.
+
+```yaml
+switches:
+  lab1-switch:
+    hostname: "192.168.1.200"
+    model: "Juniper QFX5120"   # optional
+    tags: ["switch", "lab1"]   # optional
+```
+
 ### Secrets Configuration (`redfish_secrets.yaml`)
 
 Define the credentials for each server ID.
