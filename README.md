@@ -12,6 +12,8 @@ Built with [FastMCP](https://github.com/jlowin/fastmcp), it works with any MCP-c
 - [Installation](#installation)
 - [Claude Code](#claude-code)
 - [Gemini CLI](#gemini-cli)
+- [Cursor](#cursor)
+- [Other MCP Clients](#other-mcp-clients)
 - [Configuration](#configuration)
 - [Usage](#usage)
 
@@ -116,6 +118,60 @@ Verify it works:
 
 - `/extensions list` - See installed extensions.
 - `/mcp` - See active tools and server status.
+
+## Cursor
+
+Add the server to your Cursor MCP configuration file (`.cursor/mcp.json` in your project or `~/.cursor/mcp.json` globally):
+
+```json
+{
+  "mcpServers": {
+    "baremetal-mcp": {
+      "command": "fastmcp",
+      "args": ["run", "-t", "stdio", "/path/to/baremetal-mcp/main.py"],
+      "env": {
+        "REDFISH_CONFIG": "/path/to/redfish_servers.yaml",
+        "REDFISH_SECRETS": "/path/to/redfish_secrets.yaml"
+      }
+    }
+  }
+}
+```
+
+## Other MCP Clients
+
+Any MCP-compatible client can use this server via stdio transport. Add it to your client's MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "baremetal-mcp": {
+      "command": "fastmcp",
+      "args": ["run", "-t", "stdio", "/path/to/baremetal-mcp/main.py"],
+      "env": {
+        "REDFISH_CONFIG": "/path/to/redfish_servers.yaml",
+        "REDFISH_SECRETS": "/path/to/redfish_secrets.yaml"
+      }
+    }
+  }
+}
+```
+
+Optionally add `GLOBAL_CONFIG` and `ISOS_FILE` env vars if you need custom settings or firmware ISOs.
+
+For HTTP transport instead of stdio:
+
+```json
+{
+  "mcpServers": {
+    "baremetal-mcp": {
+      "url": "http://127.0.0.1:5004/mcp"
+    }
+  }
+}
+```
+
+Start the server separately with: `fastmcp run --port 5004 --host 127.0.0.1 -t streamable-http main.py`
 
 ## Configuration
 
