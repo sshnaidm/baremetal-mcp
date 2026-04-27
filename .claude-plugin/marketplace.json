@@ -1,0 +1,14 @@
+{
+  "name": "baremetal-mcp-marketplace",
+  "owner": {
+    "name": "Sagi Shnaidman"
+  },
+  "repository": "https://github.com/sshnaidm/baremetal-mcp",
+  "plugins": [
+    {
+      "name": "baremetal-mcp",
+      "source": "../",
+      "description": "Bare-metal infrastructure MCP server — Redfish BMC operations and Junos switch queries for AI assistants"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+dell:
+  - "model_640":
+      idrac_version:
+        "5": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_RTTPH_WN64_5.10.50.00_A00.EXE
+        "6": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_T9J9H_WN64_6.10.30.20_A00.EXE
+        "7": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_VP556_WN64_7.00.00.183_A00.EXE
+      bios_version:
+        "1": http://<my-web-server>/BIOS_YJXXX_WN64_1.6.13.EXE
+        "2": http://<my-web-server>/BIOS_9M80P_WN64_2.25.0.EXE
+  - "model_650":
+      idrac_version:
+        "5": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_RTTPH_WN64_5.10.50.00_A00.EXE
+        "6": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_Y0CWW_WN64_6.10.80.00_A00.EXE
+        "7": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_K2KHC_WN64_7.20.70.50_A00.EXE
+      bios_version:
+        "1": http://<my-web-server>/BIOS_8388K_WN64_1.19.2_01.EXE
+  - "model_660":
+      idrac_version:
+        "6": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_WK34W_WN64_6.10.85.00_A00_01.EXE
+        "7": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_K2KHC_WN64_7.20.70.50_A00.EXE
+      bios_version:
+        "1": http://<my-web-server>/BIOS_N8W4N_WN64_1.6.6.EXE
+        "2": http://<my-web-server>/BIOS_GPMNW_WN64_2.8.2.EXE
+  - "model_740":
+      idrac_version:
+        "5": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_RTTPH_WN64_5.10.50.00_A00.EXE
+        "6": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_T9J9H_WN64_6.10.30.20_A00.EXE
+        "7": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_VP556_WN64_7.00.00.183_A00.EXE
+      bios_version:
+        "1": http://<my-web-server>/BIOS_YJXXX_WN64_1.6.13.EXE
+        "2": http://<my-web-server>/BIOS_9M80P_WN64_2.25.0.EXE
+  - "model_750":
+      idrac_version:
+        "6": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_Y0CWW_WN64_6.10.80.00_A00.EXE
+        "7": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_K2KHC_WN64_7.20.70.50_A00.EXE
+      bios_version:
+        "1": http://<my-web-server>/BIOS_8388K_WN64_1.19.2_01.EXE
+  - "model_760":
+      idrac_version:
+        "6": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_WK34W_WN64_6.10.85.00_A00_01.EXE
+        "7": http://<my-web-server>/iDRAC-with-Lifecycle-Controller_Firmware_K2KHC_WN64_7.20.70.50_A00.EXE
+      bios_version:
+        "1": http://<my-web-server>/BIOS_N8W4N_WN64_1.6.6.EXE
+        "2": http://<my-web-server>/BIOS_W23G7_WN64_2.7.5_01.EXE

@@ -1,0 +1,74 @@
+# Redfish Server Configuration
+# This file defines the bare-metal servers managed by the Redfish MCP server
+#
+# Each server entry should include:
+# - id: Unique identifier for the server
+# - bmc_ip: IP bmc_ip or hostname of the BMC
+# - vendor: Vendor hint for adapter selection (Dell, HPE, etc.)
+# - tags: Custom tags for filtering and organization
+# - verify_ssl: Whether to verify SSL certificates (default: false for self-signed certs)
+
+servers:
+  # Dell PowerEdge servers with iDRAC
+  dell-db-02:
+    id: dell-db-02
+    bmc_ip: 192.168.1.101
+    vendor: Dell
+    tags:
+      - lab1
+      - rack-14
+      - accounting
+      - database
+    verify_ssl: false
+    description: "Accounting Database - Dell PowerEdge server with iDRAC"
+
+  hpe-web-02:
+    id: hpe-web-02
+    bmc_ip: 192.168.1.111
+    vendor: HPE
+    tags:
+      - production
+      - web-tier
+      - rack-15
+    verify_ssl: false
+    description: "Web server - Application server"
+
+  # Development servers
+  hpe-dev-01:
+    id: hpe-dev-01
+    bmc_ip: 192.168.2.50
+    vendor: HPE
+    tags:
+      - development
+      - testing
+      - rack-20
+    verify_ssl: false
+    description: "Development server for testing"
+
+  # Short example with minimal fields
+  host-minimal:
+    bmc_ip: 192.168.2.111
+    tags:
+      - development
+      - testing
+      - rack-20
+
+# Global Settings
+settings:
+  # Default timeout for Redfish API calls (seconds)
+  default_timeout: 30
+
+  # Maximum number of retries for transient failures
+  max_retries: 3
+
+  # Backoff factor for exponential retry delay
+  backoff_factor: 0.3
+
+  # How often to poll long-running tasks (seconds)
+  task_poll_interval: 5
+
+  # Cache TTL for static server data (seconds)
+  cache_ttl: 300
+
+  # Enable debug logging
+  debug_logging: false

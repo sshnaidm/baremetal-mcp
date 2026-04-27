@@ -1,0 +1,43 @@
+{
+  "name": "baremetal-mcp",
+  "version": "1.0.0",
+  "description": "An MCP server for managing bare-metal infrastructure — Redfish BMC operations and Junos switch queries.",
+  "mcpServers": {
+    "baremetal-mcp": {
+      "command": "fastmcp",
+      "args": [
+        "run",
+        "-t",
+        "stdio",
+        "${extensionPath}/main.py"
+      ],
+      "cwd": "${extensionPath}",
+      "env": {
+        "PYTHONPATH": "${extensionPath}"
+      }
+    }
+  },
+  "settings": [
+    {
+      "name": "Redfish Config File",
+      "envVar": "REDFISH_CONFIG",
+      "description": "Path to the Redfish servers configuration YAML file (e.g., redfish_servers.yaml)",
+      "sensitive": false,
+      "optional": true
+    },
+    {
+      "name": "Redfish Secrets File",
+      "envVar": "REDFISH_SECRETS",
+      "description": "Path to the Redfish secrets YAML file (e.g., redfish_secrets.yaml)",
+      "sensitive": false,
+      "optional": true
+    },
+    {
+      "name": "ISOs Config File",
+      "envVar": "ISOS_FILE",
+      "description": "Path to the ISOs configuration YAML file (e.g., isos.yaml)",
+      "sensitive": false,
+      "optional": true
+    }
+  ]
+}
