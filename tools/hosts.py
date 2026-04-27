@@ -5,7 +5,7 @@ Host management tools - list and query host configurations.
 
 from typing import Any, Dict, List
 
-from config import mcp, CONFIG, _load_config, CONFIG_FILE
+from config import mcp, CONFIG, SWITCHES, _load_config, CONFIG_FILE
 import os
 
 
@@ -116,3 +116,16 @@ def list_hosts_by_tag(tag: str) -> Dict:
         return err
     data = {sid: cfg for sid, cfg in CONFIG.items() if tag in (cfg.get("tags") or [])}
     return {"status": "success", "data": data}
+
+
+@mcp.tool(description="List switches from the configuration (entries under the 'switches' section).")
+def list_switches() -> Dict:
+    """Return all switches defined in the configuration.
+
+    Returns
+    - {"status": "success", "data": {<switch_id>: <config>, ...}}
+    """
+    err = _check_config()
+    if err:
+        return err
+    return {"status": "success", "data": SWITCHES}

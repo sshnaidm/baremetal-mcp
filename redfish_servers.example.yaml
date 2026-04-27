@@ -52,3 +52,13 @@ servers:
       - development
       - testing
       - rack-20
+
+# Switches (separate section, uses SSH not Redfish)
+# Only 'hostname' is required. 'model', 'vendor', 'tags', 'port' are all optional.
+switches:
+  lab1-switch:
+    hostname: 192.168.1.200
+    model: "Juniper Networks QFX5120-32C-AFI"
+    tags:
+      - switch
+      - lab1

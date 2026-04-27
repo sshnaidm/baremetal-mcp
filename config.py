@@ -37,6 +37,7 @@ mcp = FastMCP(name="baremetal-mcp")
 # --- Configuration and Globals ---
 
 CONFIG: Dict = {}
+SWITCHES: Dict = {}
 SECRETS: Dict = {}
 ISOS: Dict = {}
 SETTINGS: Dict = {}
@@ -127,6 +128,9 @@ def _load_config():
                     CONFIG.update(servers_section)
                 else:
                     logger.warning("Invalid format in %s: expected a mapping for servers", config_file)
+                switches_section = raw_config.get("switches", {})
+                if isinstance(switches_section, dict):
+                    SWITCHES.update(switches_section)
 
     # Load SECRETS if empty
     if not SECRETS:

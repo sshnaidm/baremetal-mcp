@@ -7,7 +7,7 @@ Guides querying Juniper (Junos) switches via SSH. Use this skill when the user a
 </description>
 
 <instructions>
-1. Identify the target switch by its `switch_id` in the server config. Junos switches are entries in `redfish_servers.yaml` with `vendor: Junos` or tagged with `switch`. Use `list_hosts`, `list_hosts_by_lab`, or `list_hosts_by_tag` to find switch IDs.
+1. Identify the target switch by its `switch_id`. Switches are defined under the `switches:` section in `redfish_servers.yaml`. Use `list_switches` to find available switch IDs.
 
 2. All queries use a single tool: `junos_run_command(switch_id, command)`. It connects via SSH, disables paging automatically, runs the command in operational mode, and returns the output.
 
@@ -33,6 +33,6 @@ Guides querying Juniper (Junos) switches via SSH. Use this skill when the user a
 **Notes:**
 - Connects via SSH with password authentication. Credentials come from `redfish_secrets.yaml`.
 - Each call opens a fresh SSH session (no persistent connections).
-- Switch entries use the same config format as servers: `bmc_ip` for the management IP, credentials in `redfish_secrets.yaml`, optional `port` (default 22).
+- Switch entries are under the `switches:` key in the config file. `hostname` (management IP) is the only required field. `vendor`, `model`, and `tags` are optional. Credentials in `redfish_secrets.yaml`, optional `port` (default 22).
 - Any valid Junos operational-mode command can be passed — the table above is just a reference for common ones.
 </instructions>
