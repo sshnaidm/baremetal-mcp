@@ -7,7 +7,10 @@
   "plugins": [
     {
       "name": "baremetal-mcp",
-      "source": "https://github.com/sshnaidm/baremetal-mcp",
+      "source": {
+        "source": "github",
+        "repo": "sshnaidm/baremetal-mcp"
+      },
       "description": "Bare-metal infrastructure MCP server — Redfish BMC operations and Junos switch queries for AI assistants"
     }
   ]
