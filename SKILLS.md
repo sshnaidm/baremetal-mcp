@@ -83,7 +83,7 @@ This document describes the available skills (guided workflows) for the Redfish 
 **Common commands:**
 
 | Need | Command |
-|------|---------|
+| ------ | --------- |
 | Running config | `show configuration` |
 | MAC table | `show ethernet-switching table` |
 | Interface status | `show interfaces terse` |
