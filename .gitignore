@@ -1,0 +1,5 @@
+redfish_secrets.yaml
+redfish_servers.yaml
+isos.yaml
+log_requests.log.*
+.claude/
