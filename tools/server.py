@@ -8,7 +8,8 @@ from typing import Dict, List, Optional
 
 from config import mcp, CONFIG, _normalize_boot_target
 from helpers import _redfish_call, _get_handler, _ensure_boot_once_single
-from cache import RESPONSE_CACHE, TTL_FIRMWARE_INVENTORY, TTL_HARDWARE_OVERVIEW, TTL_SYSTEM_INFO
+from cache import RESPONSE_CACHE
+from config import TTL_FIRMWARE_INVENTORY, TTL_HARDWARE_OVERVIEW, TTL_SYSTEM_INFO
 
 
 @mcp.tool(description="Read current power state (On/Off) for servers, in parallel.")

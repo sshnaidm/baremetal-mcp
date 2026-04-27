@@ -13,6 +13,8 @@ from config import (
     CONFIG,
     SECRETS,
     DEFAULT_TIMEOUT,
+    MAX_RETRIES,
+    BACKOFF_FACTOR,
     VIRTUAL_MEDIA_PATH_CACHE,
     logger,
     request_logger,
@@ -125,7 +127,7 @@ async def _redfish_call(
             request_args["json"] = payload
 
         client = _get_http_client()
-        max_attempts = 3
+        max_attempts = MAX_RETRIES
         response_headers = {}
         start = time.monotonic()
         for attempt in range(1, max_attempts + 1):
@@ -155,14 +157,14 @@ async def _redfish_call(
             except httpx.HTTPStatusError as http_err:
                 status_code = http_err.response.status_code
                 if 500 <= status_code < 600 and attempt < max_attempts:
-                    await asyncio.sleep(0.5 * attempt)
+                    await asyncio.sleep(BACKOFF_FACTOR * attempt)
                     continue
                 elapsed = time.monotonic() - start
                 request_logger.info("[%s] %s %s -> %d in %.2fs", server_id, method.upper(), url, status_code, elapsed)
                 raise
             except httpx.RequestError as req_err:
                 if attempt < max_attempts:
-                    await asyncio.sleep(0.5 * attempt)
+                    await asyncio.sleep(BACKOFF_FACTOR * attempt)
                     continue
                 elapsed = time.monotonic() - start
                 request_logger.info(

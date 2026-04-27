@@ -82,6 +82,7 @@ Add environment variables for custom config paths:
 
 ```bash
 claude mcp add --transport stdio baremetal-mcp \
+  --env GLOBAL_CONFIG=/path/to/global_config.yaml \
   --env REDFISH_CONFIG=/path/to/redfish_servers.yaml \
   --env REDFISH_SECRETS=/path/to/redfish_secrets.yaml \
   -- fastmcp run -t stdio /path/to/baremetal-mcp/main.py
@@ -126,7 +127,9 @@ During installation, you will be prompted for the paths to your configuration fi
 
 ## Configuration
 
-The server requires two YAML configuration files and supports an optional third one. If not specified, it looks for default filenames in the current working directory.
+The server uses up to four YAML configuration files. If not specified, it looks for default filenames in the current working directory.
+
+**Important:** If your config files are not in the working directory, export the env vars before launching Claude Code or Gemini CLI, or pass them via `--env` flags (Claude Code) or extension settings (Gemini CLI).
 
 ### 1. Servers Configuration (`redfish_servers.yaml`)
 
@@ -164,6 +167,7 @@ See `*.example.yaml` files for complete format examples.
 You can specify custom file paths via environment variables:
 
 ```bash
+export GLOBAL_CONFIG="/path/to/global_config.yaml"  # Optional: override default settings
 export REDFISH_CONFIG="/path/to/my_servers.yaml"
 export REDFISH_SECRETS="/path/to/my_secrets.yaml"
 export ISOS_FILE="/path/to/isos.yaml"  # Optional: firmware/ISO URL catalog
@@ -181,4 +185,4 @@ Once the MCP server is running, your AI assistant will discover the Redfish tool
 - "Show me the MAC address table on lab1-switch"
 - "Run 'show lldp neighbors' on the Junos switch"
 
-> **Note on caching:** `get_firmware_inventory`, `get_hardware_overview`, and `get_system_info` cache their responses in memory to reduce BMC load. If results look stale after a hardware change, ask the assistant to run `clear_server_cache` for the affected servers. TTL values are configurable in `cache.py`.
+> **Note on caching:** `get_firmware_inventory`, `get_hardware_overview`, and `get_system_info` cache their responses in memory to reduce BMC load. If results look stale after a hardware change, ask the assistant to run `clear_server_cache` for the affected servers. TTL values are configurable in `global_config.yaml`.

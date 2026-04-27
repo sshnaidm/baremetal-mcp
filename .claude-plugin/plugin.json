@@ -8,6 +8,7 @@
       "args": ["run", "-t", "stdio", "${CLAUDE_PLUGIN_ROOT}/main.py"],
       "env": {
         "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}",
+        "GLOBAL_CONFIG": "${GLOBAL_CONFIG:-global_config.yaml}",
         "REDFISH_CONFIG": "${REDFISH_CONFIG:-redfish_servers.yaml}",
         "REDFISH_SECRETS": "${REDFISH_SECRETS:-redfish_secrets.yaml}",
         "ISOS_FILE": "${ISOS_FILE:-isos.yaml}"
