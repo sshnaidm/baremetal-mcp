@@ -7,11 +7,16 @@
   "plugins": [
     {
       "name": "baremetal-mcp",
-      "source": {
-        "source": "github",
-        "repo": "sshnaidm/baremetal-mcp"
+      "description": "Bare-metal infrastructure MCP server — Redfish BMC operations and Junos switch queries for AI assistants",
+      "author": {
+        "name": "Sagi Shnaidman"
       },
-      "description": "Bare-metal infrastructure MCP server — Redfish BMC operations and Junos switch queries for AI assistants"
+      "category": "infrastructure",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/sshnaidm/baremetal-mcp.git"
+      },
+      "homepage": "https://github.com/sshnaidm/baremetal-mcp"
     }
   ]
 }
