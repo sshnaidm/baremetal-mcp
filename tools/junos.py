@@ -11,7 +11,7 @@ from typing import Dict, List
 import paramiko
 
 import config as cfg
-from config import mcp, CONFIG, SECRETS, _load_config
+from config import mcp, SWITCHES, SECRETS, _load_config
 
 
 def _get_command_output(channel, command: str, prompt: str, timeout: int = None) -> str:
@@ -40,12 +40,12 @@ def _junos_ssh_commands_sync(switch_id: str, commands: List[str]) -> Dict:
     """Connect to a Junos switch via SSH and run commands. Blocking."""
     _load_config()
 
-    switch_cfg = CONFIG.get(switch_id)
+    switch_cfg = SWITCHES.get(switch_id)
     if not switch_cfg:
         return {"switch_id": switch_id, "status": "error", "message": f"Unknown switch: {switch_id}"}
 
     creds = SECRETS.get(switch_id, {})
-    host = switch_cfg.get("bmc_ip") or switch_cfg.get("address")
+    host = switch_cfg.get("hostname") or switch_cfg.get("bmc_ip") or switch_cfg.get("address")
     username = creds.get("username")
     password = creds.get("password")
     port = int(switch_cfg.get("port", 22))

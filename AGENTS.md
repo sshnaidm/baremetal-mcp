@@ -30,7 +30,7 @@ Four YAML files control behavior (paths set via env vars or defaults):
 - `REDFISH_SECRETS` → `redfish_secrets.yaml` — per-server/switch credentials (username/password)
 - `ISOS_FILE` → `isos.yaml` — firmware/ISO URL catalog (Dell firmware .EXE URLs keyed by model/target/version)
 
-See `*.example.yaml` files for format. The config file supports either a top-level `servers:` key or a flat mapping of server IDs (both are handled by `_load_config`).
+See `*.example.yaml` files for format. The config file supports a top-level `servers:` key (for Redfish hosts, loaded into `CONFIG`) and an optional `switches:` key (for switches, loaded into `SWITCHES`). Switch entries use `hostname` for the management IP; `vendor`, `model`, and `tags` are all optional.
 
 ## Architecture
 
@@ -48,7 +48,7 @@ See `*.example.yaml` files for format. The config file supports either a top-lev
 2. **`resources.py`** — MCP resources (`hosts://all`, `hosts://id/{id}`, etc.) for read-only host config access
 3. **`helpers.py`** — internal async logic: HTTP client management, vendor handler resolution, Redfish API calls with retry, virtual media path discovery, boot override
 4. **`handlers.py`** — vendor-specific handler classes (`Dell`, `HPE`, `Supermicro`) inheriting `BaseVendorHandler`. Each defines Redfish paths (`SYSTEM_PATH`, `MANAGER_PATH`) and auth strategy
-5. **`config.py`** — globals (`CONFIG`, `SECRETS`, `ISOS`, `SETTINGS`), YAML loading, FastMCP instance, boot target normalization, logging setup, all configurable constants (timeouts, retries, TTLs)
+5. **`config.py`** — globals (`CONFIG`, `SWITCHES`, `SECRETS`, `ISOS`, `SETTINGS`), YAML loading, FastMCP instance, boot target normalization, logging setup, all configurable constants (timeouts, retries, TTLs)
 6. **`cache.py`** — `TTLCache` class and `RESPONSE_CACHE` singleton
 
 **Key patterns:**
@@ -74,6 +74,7 @@ See `*.example.yaml` files for format. The config file supports either a top-lev
 Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor`, and `tags`.
 
 - `list_hosts`: Get the full mapping of all known servers.
+- `list_switches`: Get all switches from the `switches:` section.
 - `get_host(server_id)` / `get_hosts(server_ids)`: Get configuration for specific servers.
 - `list_hosts_by_lab(lab)` / `list_hosts_by_tag(tag)`: Filter servers for batch operations.
 
@@ -103,7 +104,8 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 
 ## Junos Switch Operations
 
-- `junos_run_command(switch_id, command)`: Run any Junos CLI command via SSH. Paging is automatically disabled. Switch entries use the same config format as servers (`bmc_ip`, credentials in `redfish_secrets.yaml`, optional `port` defaulting to 22).
+- `list_switches`: List all switches from the `switches:` section of the configuration.
+- `junos_run_command(switch_id, command)`: Run any CLI command on a switch via SSH. Paging is automatically disabled. Switches are defined under the `switches:` key in the config file. `hostname` is used for the management IP; `vendor`, `model`, and `tags` are all optional. Credentials come from `redfish_secrets.yaml`, optional `port` defaults to 22.
 
 ## Low-Level Access
 

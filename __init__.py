@@ -9,6 +9,7 @@ Supermicro) and Junos switches via SSH.
 from config import (
     mcp,
     CONFIG,
+    SWITCHES,
     SECRETS,
     ISOS,
     _load_config,
@@ -42,6 +43,7 @@ __all__ = [
     "mcp",
     # Config
     "CONFIG",
+    "SWITCHES",
     "SECRETS",
     "ISOS",
     "_load_config",
