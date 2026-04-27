@@ -8,21 +8,11 @@ Built with [FastMCP](https://github.com/jlowin/fastmcp), it works with any MCP-c
 
 - [Features](#features)
 - [Requirements](#requirements)
+- [Prerequisites](#prerequisites)
 - [Installation](#installation)
-  - [Running manually](#running-manually)
 - [Claude Code](#claude-code)
-  - [Option 1: Clone and auto-detect](#option-1-clone-and-auto-detect-simplest)
-  - [Option 2: One-liner manual setup](#option-2-one-liner-manual-setup)
-  - [Option 3: Install as a plugin from GitHub](#option-3-install-as-a-plugin-from-github)
-  - [Managing the MCP server](#managing-the-mcp-server)
-  - [Verifying](#verifying)
 - [Gemini CLI](#gemini-cli)
-  - [Installation](#installation-1)
-  - [Verifying](#verifying-1)
 - [Configuration](#configuration)
-  - [Servers Configuration](#1-servers-configuration-redfish_serversyaml)
-  - [Secrets Configuration](#2-secrets-configuration-redfish_secretsyaml)
-  - [Environment Variables](#environment-variables)
 - [Usage](#usage)
 
 ## Features
@@ -44,6 +34,24 @@ Ensure you have Python installed and install the necessary dependencies:
 pip install fastmcp httpx PyYAML urllib3 paramiko
 ```
 
+## Prerequisites
+
+Before using the MCP server with any AI agent, you **must** configure two mandatory environment variables pointing to your server and credentials files:
+
+```bash
+# Required — must be set before running Claude Code or Gemini CLI
+export REDFISH_CONFIG="/path/to/redfish_servers.yaml"
+export REDFISH_SECRETS="/path/to/redfish_secrets.yaml"
+```
+
+```bash
+# Optional — only if you need firmware ISOs or custom settings
+export ISOS_FILE="/path/to/isos.yaml"
+export GLOBAL_CONFIG="/path/to/global_config.yaml"
+```
+
+Add these to your `~/.bashrc` or `~/.zshrc` to make them permanent. See [Configuration](#configuration) for file format details.
+
 ## Installation
 
 ### Running manually
@@ -58,9 +66,24 @@ fastmcp run --port 5004 --host 127.0.0.1 -t streamable-http main.py
 
 ## Claude Code
 
-There are three ways to set up this MCP server with Claude Code:
+### Install as a plugin from GitHub (recommended)
 
-### Option 1: Clone and auto-detect (simplest)
+Make sure the [prerequisite env vars](#prerequisites) are exported in your shell, then:
+
+```bash
+claude plugin marketplace add sshnaidm/baremetal-mcp
+claude plugin install baremetal-mcp@baremetal-mcp-marketplace
+```
+
+Verify it works:
+
+```bash
+claude mcp list                  # see configured servers
+```
+
+Or within a Claude Code session, run `/mcp` to see active tools and server status.
+
+### Alternative: clone and auto-detect
 
 Clone the repository and open it with Claude Code. The included `.mcp.json` is detected automatically — you'll be prompted to approve the server on first use.
 
@@ -70,84 +93,58 @@ cd baremetal-mcp
 claude
 ```
 
-### Option 2: One-liner manual setup
+### Alternative: manual setup with env vars
 
-Register the server directly from the cloned repo:
-
-```bash
-claude mcp add --transport stdio baremetal-mcp -- fastmcp run -t stdio /path/to/baremetal-mcp/main.py
-```
-
-Add environment variables for custom config paths:
+Register the server directly and pass config paths as env vars:
 
 ```bash
 claude mcp add --transport stdio baremetal-mcp \
-  --env GLOBAL_CONFIG=/path/to/global_config.yaml \
   --env REDFISH_CONFIG=/path/to/redfish_servers.yaml \
   --env REDFISH_SECRETS=/path/to/redfish_secrets.yaml \
   -- fastmcp run -t stdio /path/to/baremetal-mcp/main.py
 ```
 
-### Option 3: Install as a plugin from GitHub
-
-```bash
-claude plugin marketplace add sshnaidm/baremetal-mcp
-claude plugin install baremetal-mcp@baremetal-mcp-marketplace
-```
-
-### Managing the MCP server
-
-```bash
-claude mcp list                # see configured servers
-claude mcp get baremetal-mcp   # inspect configuration
-claude mcp remove baremetal-mcp  # remove the server
-```
-
-### Verifying
-
-- `claude mcp list` - See configured MCP servers.
-- `/mcp` within a session - See active tools and server status.
-
 ## Gemini CLI
 
-### Installation
-
-Install directly from the repository:
+Make sure the [prerequisite env vars](#prerequisites) are exported in your shell, then install directly from the repository:
 
 ```bash
 gemini extensions install https://github.com/sshnaidm/baremetal-mcp.git
 ```
 
-During installation, you will be prompted for the paths to your configuration files. You can press `Enter` to skip these and provide them later (see [Configuration](#configuration) below).
-
-### Verifying
+Verify it works:
 
 - `/extensions list` - See installed extensions.
 - `/mcp` - See active tools and server status.
 
 ## Configuration
 
-The server uses up to four YAML configuration files. If not specified, it looks for default filenames in the current working directory.
+The server uses up to four YAML configuration files controlled by environment variables.
 
-**Important:** If your config files are not in the working directory, export the env vars before launching Claude Code or Gemini CLI, or pass them via `--env` flags (Claude Code) or extension settings (Gemini CLI).
+| Env var | Default filename | Required | Description |
+| --------- | ----------------- | ---------- | ------------- |
+| `REDFISH_CONFIG` | `redfish_servers.yaml` | **Yes** | Server/switch definitions (BMC IPs, vendor, tags) |
+| `REDFISH_SECRETS` | `redfish_secrets.yaml` | **Yes** | Per-server credentials (username/password) |
+| `ISOS_FILE` | `isos.yaml` | No | Firmware/ISO URL catalog |
+| `GLOBAL_CONFIG` | `global_config.yaml` | No | Settings overrides (timeouts, retries, cache TTLs) |
 
-### 1. Servers Configuration (`redfish_servers.yaml`)
+### Servers Configuration (`redfish_servers.yaml`)
 
-Define your hosts, their BMC IPs, and optional metadata like labs or tags.
+Each entry requires `bmc_ip` (the BMC management address). All other fields are optional — `vendor` is auto-detected if omitted.
 
 ```yaml
 srv-dell-01:
-  bmc_ip: "10.10.1.5"
-  vendor: "dell"
-  lab: "lab-a"
-  tags: ["compute", "gpu"]
+  bmc_ip: "10.10.1.5"         # required
+  vendor: "dell"               # optional, auto-detected if omitted
+  lab: "lab-a"                 # optional
+  tags: ["compute", "gpu"]     # optional
 srv-hpe-02:
   bmc_ip: "10.10.1.6"
   vendor: "hpe"
   lab: "lab-b"
 ```
 
-### 2. Secrets Configuration (`redfish_secrets.yaml`)
+### Secrets Configuration (`redfish_secrets.yaml`)
 
 Define the credentials for each server ID.
 
@@ -161,17 +158,6 @@ srv-hpe-02:
 ```
 
 See `*.example.yaml` files for complete format examples.
-
-### Environment Variables
-
-You can specify custom file paths via environment variables:
-
-```bash
-export GLOBAL_CONFIG="/path/to/global_config.yaml"  # Optional: override default settings
-export REDFISH_CONFIG="/path/to/my_servers.yaml"
-export REDFISH_SECRETS="/path/to/my_secrets.yaml"
-export ISOS_FILE="/path/to/isos.yaml"  # Optional: firmware/ISO URL catalog
-```
 
 ## Usage
 
