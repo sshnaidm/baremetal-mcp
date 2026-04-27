@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 request_logger = logging.getLogger("request_logger")
 request_logger.setLevel(logging.INFO)
 if not any(isinstance(h, RotatingFileHandler) for h in request_logger.handlers):
-    handler = RotatingFileHandler("log_requests.log", maxBytes=1000000, backupCount=5)
+    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log_requests.log")
+    handler = RotatingFileHandler(log_path, maxBytes=1000000, backupCount=5)
     formatter = logging.Formatter("%(asctime)s - %(message)s")
     handler.setFormatter(formatter)
     request_logger.addHandler(handler)
@@ -38,11 +39,23 @@ mcp = FastMCP(name="baremetal-mcp")
 CONFIG: Dict = {}
 SECRETS: Dict = {}
 ISOS: Dict = {}
+SETTINGS: Dict = {}
+
+# Defaults — overridden by global_config.yaml if present
 DEFAULT_TIMEOUT = 60
+MAX_RETRIES = 3
+BACKOFF_FACTOR = 0.5
+TTL_FIRMWARE_INVENTORY = 7200
+TTL_HARDWARE_OVERVIEW = 14400
+TTL_SYSTEM_INFO = 1800
+TTL_DISK_CACHE = 86400
+SSH_TIMEOUT = 15
+SSH_COMMAND_TIMEOUT = 60
 
 CONFIG_FILE = os.getenv("REDFISH_CONFIG", "redfish_servers.yaml")
 SECRETS_FILE = os.getenv("REDFISH_SECRETS", "redfish_secrets.yaml")
 ISOS_FILE = os.getenv("ISOS_FILE", "isos.yaml")
+SETTINGS_FILE = os.getenv("GLOBAL_CONFIG", "global_config.yaml")
 
 # Cache for discovered virtual media paths per server
 VIRTUAL_MEDIA_PATH_CACHE: Dict[str, str] = {}
@@ -76,9 +89,31 @@ def _load_config():
 
     Loads each mapping independently and tolerates a missing secrets file.
     """
+    global DEFAULT_TIMEOUT, MAX_RETRIES, BACKOFF_FACTOR
+    global TTL_FIRMWARE_INVENTORY, TTL_HARDWARE_OVERVIEW, TTL_SYSTEM_INFO, TTL_DISK_CACHE
+    global SSH_TIMEOUT, SSH_COMMAND_TIMEOUT
+
     config_file = CONFIG_FILE
     secrets_file = SECRETS_FILE
     isos_file = ISOS_FILE
+    settings_file = SETTINGS_FILE
+
+    # Load SETTINGS if empty — overrides module-level defaults
+    if not SETTINGS:
+        if os.path.exists(settings_file):
+            with open(settings_file, "r") as f:
+                raw_settings = yaml.safe_load(f) or {}
+                if isinstance(raw_settings, dict):
+                    SETTINGS.update(raw_settings)
+                    DEFAULT_TIMEOUT = SETTINGS.get("default_timeout", DEFAULT_TIMEOUT)
+                    MAX_RETRIES = SETTINGS.get("max_retries", MAX_RETRIES)
+                    BACKOFF_FACTOR = SETTINGS.get("backoff_factor", BACKOFF_FACTOR)
+                    TTL_FIRMWARE_INVENTORY = SETTINGS.get("cache_ttl_firmware_inventory", TTL_FIRMWARE_INVENTORY)
+                    TTL_HARDWARE_OVERVIEW = SETTINGS.get("cache_ttl_hardware_overview", TTL_HARDWARE_OVERVIEW)
+                    TTL_SYSTEM_INFO = SETTINGS.get("cache_ttl_system_info", TTL_SYSTEM_INFO)
+                    TTL_DISK_CACHE = SETTINGS.get("cache_ttl_disk_cache", TTL_DISK_CACHE)
+                    SSH_TIMEOUT = SETTINGS.get("ssh_timeout", SSH_TIMEOUT)
+                    SSH_COMMAND_TIMEOUT = SETTINGS.get("ssh_command_timeout", SSH_COMMAND_TIMEOUT)
 
     # Load CONFIG if empty
     if not CONFIG:

@@ -10,13 +10,16 @@ from typing import Dict, List
 
 import paramiko
 
+import config as cfg
 from config import mcp, CONFIG, SECRETS, _load_config
 
 
-def _get_command_output(channel, command: str, prompt: str, timeout: int = 60) -> str:
+def _get_command_output(channel, command: str, prompt: str, timeout: int = None) -> str:
     """Send a command and return cleaned output, waiting for the prompt."""
     channel.send(command + "\n")
 
+    if timeout is None:
+        timeout = cfg.SSH_COMMAND_TIMEOUT
     output = ""
     deadline = time.time() + timeout
     while not output.strip().endswith(prompt):
@@ -63,7 +66,7 @@ def _junos_ssh_commands_sync(switch_id: str, commands: List[str]) -> Dict:
             port=port,
             look_for_keys=False,
             allow_agent=False,
-            timeout=15,
+            timeout=cfg.SSH_TIMEOUT,
         )
 
         channel = client.invoke_shell()

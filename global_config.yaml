@@ -1,0 +1,21 @@
+# Global settings for baremetal-mcp server
+# Override by setting GLOBAL_CONFIG env var to a custom file path
+
+# Default timeout for Redfish API calls (seconds)
+default_timeout: 60
+
+# Maximum number of retries for transient failures
+max_retries: 3
+
+# Backoff factor for exponential retry delay
+backoff_factor: 0.5
+
+# Cache TTLs (seconds)
+cache_ttl_firmware_inventory: 7200   # 2 hours
+cache_ttl_hardware_overview: 14400   # 4 hours
+cache_ttl_system_info: 1800          # 30 minutes
+cache_ttl_disk_cache: 86400          # 24 hours
+
+# SSH settings for Junos switch commands (seconds)
+ssh_timeout: 15
+ssh_command_timeout: 60

@@ -23,8 +23,9 @@ No test suite exists currently. Validation is done by running the server against
 
 ## Configuration
 
-Three YAML files control behavior (paths set via env vars or defaults):
+Four YAML files control behavior (paths set via env vars or defaults):
 
+- `GLOBAL_CONFIG` → `global_config.yaml` — server settings (timeouts, retries, cache TTLs). Ships with defaults in the repo; override via env var to customize.
 - `REDFISH_CONFIG` → `redfish_servers.yaml` — server/switch definitions (`bmc_ip`, vendor, lab, tags)
 - `REDFISH_SECRETS` → `redfish_secrets.yaml` — per-server/switch credentials (username/password)
 - `ISOS_FILE` → `isos.yaml` — firmware/ISO URL catalog (Dell firmware .EXE URLs keyed by model/target/version)
@@ -47,8 +48,8 @@ See `*.example.yaml` files for format. The config file supports either a top-lev
 2. **`resources.py`** — MCP resources (`hosts://all`, `hosts://id/{id}`, etc.) for read-only host config access
 3. **`helpers.py`** — internal async logic: HTTP client management, vendor handler resolution, Redfish API calls with retry, virtual media path discovery, boot override
 4. **`handlers.py`** — vendor-specific handler classes (`Dell`, `HPE`, `Supermicro`) inheriting `BaseVendorHandler`. Each defines Redfish paths (`SYSTEM_PATH`, `MANAGER_PATH`) and auth strategy
-5. **`config.py`** — globals (`CONFIG`, `SECRETS`, `ISOS`), YAML loading, FastMCP instance, boot target normalization, logging setup
-6. **`cache.py`** — `TTLCache` class and `RESPONSE_CACHE` singleton; TTL constants for each cached operation
+5. **`config.py`** — globals (`CONFIG`, `SECRETS`, `ISOS`, `SETTINGS`), YAML loading, FastMCP instance, boot target normalization, logging setup, all configurable constants (timeouts, retries, TTLs)
+6. **`cache.py`** — `TTLCache` class and `RESPONSE_CACHE` singleton
 
 **Key patterns:**
 
@@ -59,7 +60,7 @@ See `*.example.yaml` files for format. The config file supports either a top-lev
 - `helpers._redfish_call` retries on 5xx errors and connection failures (up to 3 attempts with backoff)
 - HTTP client uses `httpx.AsyncClient` with `verify=False` (BMC self-signed certs)
 - Tool registration happens at import time via `@mcp.tool()` decorators; `tools/__init__.py` imports all tool modules
-- Slow/static responses are cached in memory with TTLs: `get_firmware_inventory`, `get_hardware_overview`, `get_system_info`; `dell_export_hardware_inventory` uses a disk cache. TTL values are the constants at the top of `cache.py`.
+- Slow/static responses are cached in memory with TTLs: `get_firmware_inventory`, `get_hardware_overview`, `get_system_info`; `dell_export_hardware_inventory` uses a disk cache. TTL values are configurable in `global_config.yaml` (defaults in `config.py`).
 
 ## Core Principles
 
@@ -114,7 +115,7 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 - Vendor-specific Redfish paths differ (Dell uses `System.Embedded.1`/`iDRAC.Embedded.1`, HPE/Supermicro use `1`). The handler layer abstracts this — use `_get_handler` to get correct paths.
 - Hosts are organized by labs and tags in the config for filtering.
 - `get_firmware_inventory`, `get_hardware_overview`, and `get_system_info` return cached results. If results look stale after a hardware change, call `clear_server_cache(server_ids)`. `dell_update_firmware` automatically clears the firmware cache on success.
-- To change cache TTL values, edit the constants at the top of `cache.py`: `TTL_FIRMWARE_INVENTORY`, `TTL_HARDWARE_OVERVIEW`, `TTL_SYSTEM_INFO`, `TTL_DISK_CACHE`.
+- To change cache TTL values, timeouts, or retry settings, edit `global_config.yaml`. Defaults are defined in `config.py` and overridden by the YAML file at startup.
 - All Redfish requests and payloads are logged to `log_requests.log`.
 
 ## Skills

@@ -10,7 +10,8 @@ from typing import Dict, List
 
 from config import mcp, ISOS, _load_config, _flatten_dict, logger
 from helpers import _redfish_call, _get_handler
-from cache import RESPONSE_CACHE, TTL_DISK_CACHE
+from cache import RESPONSE_CACHE
+from config import TTL_DISK_CACHE
 
 
 @mcp.tool(description="List all available ISOs with their URLs.")

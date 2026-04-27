@@ -6,12 +6,6 @@ TTL-based in-memory cache for Redfish API responses.
 import time
 from typing import Any, Dict, Optional, Tuple
 
-# TTL constants (seconds)
-TTL_FIRMWARE_INVENTORY = 7200  # 2 hours — only changes after firmware update
-TTL_HARDWARE_OVERVIEW = 14400  # 4 hours — hardware never changes w/o physical mod
-TTL_SYSTEM_INFO = 1800  # 30 minutes — includes semi-static power/health
-TTL_DISK_CACHE = 86400  # 24 hours — for dell_export_hardware_inventory file
-
 
 class TTLCache:
     """Simple dict-backed TTL cache. Not thread-safe; designed for asyncio single-loop use."""
