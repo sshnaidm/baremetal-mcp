@@ -69,6 +69,20 @@ This document describes the available skills (guided workflows) for the Redfish 
 - Component naming varies across vendors and generations. Dell iDRAC 10 (PowerEdge R7x25+) uses `"BMC"` instead of `"Remote Access"`, `"RAID.Slot"` instead of `"PERC"`, `"NIC.Slot"` instead of `"Ethernet"`. HPE uses names like `"iLO 5"`, `"System ROM"`, `"Smart Array"`. Use `get_system_info` for BIOS + BMC firmware versions to avoid vendor/generation-specific filter issues.
 - Both `get_system_info` and `get_firmware_inventory` cache their results in memory (see `cache.py` for TTL values). If results look unexpected or don't reflect a recent change, call `clear_server_cache(server_ids)` to force a fresh fetch.
 
+## Supermicro Hardware Inventory
+
+**When to use:** When querying hardware on Supermicro servers, especially X11 generation (AST2500 BMC).
+
+**Key differences from Dell/HPE:**
+
+- **Storage is often empty.** `/Systems/1/Storage` returns no members unless a supported RAID controller (LSI 3108, Broadcom 38xx/39xx) is present. The code falls back to SimpleStorage, then Chassis-based discovery (`/Chassis/NVMeSSD.*/Drives/`, `/Chassis/HA-RAID.*/Drives/`).
+- **Known limitation:** On X11 servers with both a RAID controller AND NVMe drives, RAID drives appear under `/Storage` while NVMe drives only appear under `/Chassis`. Because the Chassis fallback only fires when `/Storage` is empty, NVMe drives will be missed in this mixed configuration. This is rare on X11 and resolved on X12+ where NVMe appears in `/Storage`.
+- **Firmware inventory is minimal.** Only BMC and BIOS versions — no NIC or RAID firmware. Use `get_system_info` instead of `get_firmware_inventory`.
+- **NetworkAdapters** are fetched from `/Chassis/1/NetworkAdapters` (Supermicro only) for physical adapter details (model, serial, PCIe info). Not fetched on Dell/HPE to avoid redundant requests.
+- **Virtual media** uses the standard InsertMedia action but requires BMC network connectivity to the ISO server.
+
+**Reference:** See `summary_supermicro.md` for full Redfish capability analysis.
+
 ## Query Junos Switches
 
 **Location:** `skills/junos-switch/SKILL.md`
