@@ -81,7 +81,7 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 ## Hardware & Firmware Inventory
 
 - `get_system_info`: Quick summary (manufacturer, model, serial, power state, health, BIOS version, BMC firmware version). Only 2 Redfish requests per server — prefer this for BIOS + iDRAC/iLO versions.
-- `get_hardware_overview`: Unified view of CPUs, memory, NICs, and storage (drives/volumes). Compatible with Dell and HPE.
+- `get_hardware_overview`: Unified view of CPUs, memory, NICs, and storage (drives/volumes). Compatible with Dell, HPE, and Supermicro (includes SimpleStorage and Chassis-based drive fallbacks for older Supermicro BMCs).
 - `get_firmware_inventory`: Lists firmware components and versions. Always use `name_filter` to limit results (e.g., `["PERC"]`, `["Ethernet"]`). Without a filter, returns 30-40+ entries per server.
 - `dell_export_hardware_inventory`: Dell-only, extremely detailed OEM hardware XML. Use as last resort.
 

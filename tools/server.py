@@ -200,16 +200,21 @@ async def get_system_info(server_ids: List[str]) -> List[Dict]:
     return await asyncio.gather(*tasks)
 
 
-@mcp.tool(description="Unified hardware inventory: CPUs, memory, NICs, drives, volumes (Dell/HPE compatible).")
+@mcp.tool(
+    description="Unified hardware inventory: CPUs, memory, NICs, drives, volumes (Dell/HPE/Supermicro compatible)."
+)
 async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
     """Aggregates CPU, memory, NIC, and storage (drives/volumes) info using standard Redfish paths.
 
-    Targets broad compatibility with Dell and HPE by using:
+    Targets broad compatibility with Dell, HPE, and Supermicro by using:
     - Systems/{id}
     - Systems/{id}/Processors
     - Systems/{id}/Memory
     - Systems/{id}/EthernetInterfaces
     - Systems/{id}/Storage (then Drives/Volumes)
+    - Systems/{id}/SimpleStorage (fallback when Storage is empty)
+    - Chassis/*/Drives (Supermicro NVMe/RAID fallback)
+    - Chassis/*/NetworkAdapters (Supermicro physical adapter details)
     """
 
     async def _collect_single(server_id: str) -> Dict:
@@ -262,6 +267,77 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
                 _fetch_members(storage_coll_path),
             )
 
+            # Fetch Chassis collection once for Supermicro (used by drive discovery + NetworkAdapters)
+            chassis_list: List[Dict] = []
+            is_supermicro = handler.__class__.__name__ == "Supermicro"
+            if is_supermicro:
+                chassis_resp = await _redfish_call(server_id, "GET", "/redfish/v1/Chassis")
+                if chassis_resp.get("status") == "success":
+                    chassis_list = (chassis_resp.get("data", {}) or {}).get("Members", [])
+
+            # SimpleStorage fallback when /Storage returns no controllers
+            simple_storage_drives: List[Dict] = []
+            if not storage_members:
+                simple_storage_path = f"{handler.SYSTEM_PATH}/SimpleStorage"
+                simple_members = await _fetch_members(simple_storage_path)
+                for sm in simple_members:
+                    for dev in sm.get("Devices", []):
+                        simple_storage_drives.append(
+                            {
+                                "id": dev.get("Name", ""),
+                                "name": dev.get("Name", ""),
+                                "model": dev.get("Model") or dev.get("Manufacturer", ""),
+                                "serial_number": None,
+                                "capacity_bytes": dev.get("CapacityBytes"),
+                                "media_type": None,
+                                "protocol": None,
+                                "status": dev.get("Status"),
+                                "source": "SimpleStorage",
+                            }
+                        )
+
+            # Supermicro Chassis-based drive discovery (NVMe and RAID drives
+            # are exposed under /Chassis/<name>/Drives/ on Supermicro X11).
+            # Known limitation: on X11 with both a RAID controller AND NVMe,
+            # RAID drives appear in /Storage while NVMe only in /Chassis —
+            # this fallback won't fire because /Storage is non-empty.
+            chassis_drives: List[Dict] = []
+            if not storage_members and not simple_storage_drives:
+                if is_supermicro:
+                    storage_chassis_paths = [
+                        cm.get("@odata.id")
+                        for cm in chassis_list
+                        if cm.get("@odata.id")
+                        and any(
+                            kw in cm["@odata.id"]
+                            for kw in ("NVMeSSD", "HA-RAID", "StorageBackplane", "StorageEnclosure")
+                        )
+                    ]
+
+                    async def _fetch_chassis_drives(chassis_path: str) -> List[Dict]:
+                        drive_members = await _fetch_members(f"{chassis_path}/Drives")
+                        return [
+                            {
+                                "id": d.get("Id"),
+                                "name": d.get("Name"),
+                                "model": d.get("Model"),
+                                "serial_number": d.get("SerialNumber"),
+                                "capacity_bytes": d.get("CapacityBytes"),
+                                "media_type": d.get("MediaType"),
+                                "protocol": d.get("Protocol"),
+                                "status": d.get("Status"),
+                                "source": f"Chassis:{chassis_path}",
+                            }
+                            for d in drive_members
+                        ]
+
+                    if storage_chassis_paths:
+                        chassis_results = await asyncio.gather(
+                            *[_fetch_chassis_drives(cp) for cp in storage_chassis_paths]
+                        )
+                        for cr in chassis_results:
+                            chassis_drives.extend(cr)
+
             # Process processors
             processors = [
                 {
@@ -301,12 +377,52 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
                     "name": n.get("Name"),
                     "mac": n.get("MACAddress"),
                     "link_speed_mbps": n.get("CurrentLinkSpeedMbps") or n.get("SpeedMbps"),
+                    "link_status": n.get("LinkStatus"),
+                    "interface_enabled": n.get("InterfaceEnabled"),
+                    "fqdn": n.get("FQDN"),
                     "ipv4": n.get("IPv4Addresses"),
                     "ipv6": n.get("IPv6Addresses"),
                     "status": n.get("Status"),
                 }
                 for n in nic_data
             ]
+
+            # Network adapters: physical adapter details from Chassis (Supermicro only)
+            network_adapters: List[Dict] = []
+            adapter_chassis_paths = [
+                cr.get("@odata.id", "")
+                for cr in chassis_list
+                if not any(
+                    kw in cr.get("@odata.id", "") for kw in ("Enclosure", "NVMeSSD", "HA-RAID", "StorageBackplane")
+                )
+            ]
+            if adapter_chassis_paths:
+                adapter_results = await asyncio.gather(
+                    *[_fetch_members(f"{cp}/NetworkAdapters") for cp in adapter_chassis_paths]
+                )
+                for adapter_members in adapter_results:
+                    for a in adapter_members:
+                        network_adapters.append(
+                            {
+                                "id": a.get("Id"),
+                                "name": a.get("Name"),
+                                "manufacturer": a.get("Manufacturer"),
+                                "model": a.get("Model"),
+                                "serial_number": a.get("SerialNumber"),
+                                "part_number": a.get("PartNumber"),
+                                "controllers": [
+                                    {
+                                        "location": ((c.get("Location") or {}).get("PartLocation") or {}).get(
+                                            "ServiceLabel"
+                                        ),
+                                        "pcie_type": (c.get("PCIeInterface") or {}).get("PCIeType"),
+                                        "lanes_in_use": (c.get("PCIeInterface") or {}).get("LanesInUse"),
+                                        "port_count": (c.get("ControllerCapabilities") or {}).get("NetworkPortCount"),
+                                    }
+                                    for c in a.get("Controllers", [])
+                                ],
+                            }
+                        )
 
             # Process storage controllers: fetch drives and volumes per controller in parallel
             async def _process_storage_controller(storage_member: Dict) -> tuple:
@@ -374,11 +490,17 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
                     drives.extend(ctrl_drives)
                     volumes.extend(ctrl_volumes)
 
+            if simple_storage_drives:
+                drives.extend(simple_storage_drives)
+            if chassis_drives:
+                drives.extend(chassis_drives)
+
             inventory = {
                 "system": system_summary,
                 "processors": processors,
                 "memory": memory_modules,
                 "nics": nics,
+                "network_adapters": network_adapters,
                 "storage": {"drives": drives, "volumes": volumes},
             }
             result = {"server_id": server_id, "status": "success", "inventory": inventory}
