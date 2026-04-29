@@ -20,6 +20,23 @@ Repository = "https://github.com/sshnaidm/baremetal-mcp"
 [project.scripts]
 baremetal-mcp = "main:main"
 
+[project.optional-dependencies]
+test = ["pytest", "pytest-asyncio", "pytest-cov"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--cov=. --cov-report=term-missing --cov-config=pyproject.toml"
+
+[tool.coverage.run]
+source = ["."]
+omit = ["tests/*", ".venv/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

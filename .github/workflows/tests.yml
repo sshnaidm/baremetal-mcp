@@ -1,0 +1,68 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install -e '.[test]'
+
+      - name: Run tests
+        run: |
+          mkdir -p results
+          python -m pytest \
+            --junitxml=results/pytest-results.xml \
+            --cov-report=xml:results/coverage.xml \
+            --cov-report=html:results/htmlcov/ \
+            --cov-report=term-missing \
+            -v 2>&1 | tee results/pytest-output.txt
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo '## Test Results — Python ${{ matrix.python-version }}' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          if grep -q "passed" results/pytest-output.txt; then
+            passed=$(grep -oP '\d+ passed' results/pytest-output.txt | head -1)
+            echo "**${passed}**" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '### Coverage' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          sed -n '/^Name.*Stmts/,/^TOTAL/p' results/pytest-output.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-py${{ matrix.python-version }}
+          path: |
+            results/pytest-results.xml
+            results/coverage.xml
+            results/pytest-output.txt
+          retention-days: 30
+
+      - name: Upload coverage HTML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html-py${{ matrix.python-version }}
+          path: results/htmlcov/
+          retention-days: 30
