@@ -58,7 +58,15 @@ servers:
 switches:
   lab1-switch:
     hostname: 192.168.1.200
+    vendor: Juniper
     model: "Juniper Networks QFX5120-32C-AFI"
+    tags:
+      - switch
+      - lab1
+  lab1-dell-switch:
+    hostname: 192.168.1.201
+    vendor: Dell
+    model: "S5232F-ON"
     tags:
       - switch
       - lab1

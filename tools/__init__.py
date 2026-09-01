@@ -9,4 +9,5 @@ from tools import redfish
 from tools import server
 from tools import media
 from tools import dell
+from tools import dell_switch
 from tools import junos

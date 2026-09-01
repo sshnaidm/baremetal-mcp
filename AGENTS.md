@@ -4,7 +4,7 @@ This file provides guidance to AI coding assistants working with this repository
 
 ## What This Is
 
-An MCP (Model Context Protocol) server that exposes Redfish BMC operations (Dell iDRAC, HPE iLO, Supermicro) and Junos switch queries as tools for AI assistants. Built with FastMCP, it provides inventory, power management, virtual media, boot control, Dell firmware updates, and Junos switch CLI access.
+An MCP (Model Context Protocol) server that exposes Redfish BMC operations (Dell iDRAC, HPE iLO, Supermicro) and Junos/Dell OS10 switch queries as tools for AI assistants. Built with FastMCP, it provides inventory, power management, virtual media, boot control, Dell firmware updates, and network switch CLI access.
 
 ## Running the Server
 
@@ -43,6 +43,7 @@ See `*.example.yaml` files for format. The config file supports a top-level `ser
    - `server.py` — power state, firmware inventory, system info, hardware overview, boot control, cache management
    - `media.py` — virtual media mount/unmount/boot-from-ISO
    - `dell.py` — Dell-specific: firmware update, hardware inventory XML export, ISO catalog
+   - `dell_switch.py` — read-only Dell OS10 switch queries via SSH (`dell_switch_run_command`)
    - `junos.py` — Junos switch queries via SSH (`junos_run_command`)
    - `redfish.py` — low-level `redfish_call` and `parallel_redfish_call` passthrough
 2. **`resources.py`** — MCP resources (`hosts://all`, `hosts://id/{id}`, etc.) for read-only host config access
@@ -107,6 +108,10 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 - `list_switches`: List all switches from the `switches:` section of the configuration.
 - `junos_run_command(switch_id, command)`: Run any CLI command on a switch via SSH. Paging is automatically disabled. Switches are defined under the `switches:` key in the config file. `hostname` is used for the management IP; `vendor`, `model`, and `tags` are all optional. Credentials come from `redfish_secrets.yaml`, optional `port` defaults to 22.
 
+## Dell OS10 Switch Operations
+
+- `dell_switch_run_command(switch_id, command)`: Run a read-only Dell OS10 `show` command via SSH. The tool rejects configuration commands and embedded newlines before connecting. Paging is disabled only for the SSH session with `terminal length 0`.
+
 ## Low-Level Access
 
 - `redfish_call` / `parallel_redfish_call`: Custom Redfish requests not covered by high-level tools. Research standard Redfish paths for the vendor and use these.
@@ -124,4 +129,5 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 
 `skills/update-dell-firmware/SKILL.md` — guided workflow for Dell firmware updates using the tool chain: `get_vendor` → `list_isos`/`dell_list_url` → `dell_update_firmware`.
 `skills/junos-switch/SKILL.md` — guided workflow for querying Junos switches via `junos_run_command`.
+`skills/dell-switch/SKILL.md` — guided workflow for read-only Dell OS10 queries via `dell_switch_run_command`.
 `SKILLS.md` — check firmware versions workflow: when to use `get_system_info` vs `get_firmware_inventory`.
