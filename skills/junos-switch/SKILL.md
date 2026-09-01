@@ -1,12 +1,10 @@
+---
+name: junos-switch
+description: Query Juniper Junos switches through the baremetal MCP when inspecting configuration, interfaces, VLANs, forwarding tables, neighbors, or operational state.
+---
+
 # Query Junos Switches
 
-<name>junos-switch</name>
-
-<description>
-Guides querying Juniper (Junos) switches via SSH. Use this skill when the user asks to check switch configuration, interfaces, MAC tables, or run any CLI command on a Junos switch.
-</description>
-
-<instructions>
 1. Identify the target switch by its `switch_id`. Switches are defined under the `switches:` section in `redfish_servers.yaml`. Use `list_switches` to find available switch IDs.
 
 2. All queries use a single tool: `junos_run_command(switch_id, command)`. It connects via SSH, disables paging automatically, runs the command in operational mode, and returns the output.
@@ -31,8 +29,8 @@ Guides querying Juniper (Junos) switches via SSH. Use this skill when the user a
    | Spanning tree | `junos_run_command(switch_id, "show spanning-tree bridge")` |
 
 **Notes:**
+
 - Connects via SSH with password authentication. Credentials come from `redfish_secrets.yaml`.
 - Each call opens a fresh SSH session (no persistent connections).
 - Switch entries are under the `switches:` key in the config file. `hostname` (management IP) is the only required field. `vendor`, `model`, and `tags` are optional. Credentials in `redfish_secrets.yaml`, optional `port` (default 22).
-- Any valid Junos operational-mode command can be passed — the table above is just a reference for common ones.
-</instructions>
+- Prefer read-only operational commands. Do not run disruptive commands such as reboot, request, clear, or configuration changes unless the user explicitly authorizes them.
