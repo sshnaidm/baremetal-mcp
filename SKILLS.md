@@ -110,3 +110,32 @@ This document describes the available skills (guided workflows) for the Redfish 
 - Connects via SSH with password auth. Credentials in `redfish_secrets.yaml`.
 - Paging is automatically disabled before each command.
 - Any valid Junos operational-mode command can be passed.
+
+## Query Dell OS10 Switches
+
+**Location:** `skills/dell-switch/SKILL.md`
+
+**When to use:** When a user asks to inspect a Dell OS10 switch's configuration, interfaces, MAC table, VLANs, or neighbors.
+
+**Workflow:**
+
+1. Identify the target switch by its `switch_id` using `list_switches`.
+2. Use `dell_switch_run_command(switch_id, command)` with a read-only Dell OS10 `show` command.
+
+**Common commands:**
+
+| Need | Command |
+| ------ | --------- |
+| OS and hardware version | `show version` |
+| Running config | `show running-configuration` |
+| Interface status | `show interface status` |
+| VLANs | `show vlan` |
+| MAC table | `show mac address-table` |
+| LLDP neighbors | `show lldp neighbors` |
+
+**Notes:**
+
+- Connects via SSH with password auth. Credentials are stored in `redfish_secrets.yaml`.
+- Paging is disabled only for the SSH session.
+- Only a single-line command beginning with `show` is accepted; mutating commands are rejected before connecting.
+- The implementation targets Dell SmartFabric OS10, not OS6 or OS9.

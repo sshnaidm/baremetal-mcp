@@ -1,7 +1,7 @@
 [project]
 name = "baremetal-mcp"
 version = "1.0.0"
-description = "MCP server for managing bare-metal infrastructure — Redfish BMC operations and Junos switch queries for AI assistants"
+description = "MCP server for managing bare-metal infrastructure — Redfish BMC operations and network switch queries for AI assistants"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"

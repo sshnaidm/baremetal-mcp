@@ -1,6 +1,6 @@
 # Baremetal MCP Server
 
-An MCP (Model Context Protocol) server for managing bare-metal infrastructure. It exposes Redfish BMC operations (Dell iDRAC, HPE iLO, Supermicro) and Junos switch queries as tools for AI assistants, providing inventory collection, power management, virtual media injection, boot control, firmware updates, and network switch CLI access.
+An MCP (Model Context Protocol) server for managing bare-metal infrastructure. It exposes Redfish BMC operations (Dell iDRAC, HPE iLO, Supermicro) and Junos/Dell OS10 switch queries as tools for AI assistants, providing inventory collection, power management, virtual media injection, boot control, firmware updates, and network switch CLI access.
 
 Built with [FastMCP](https://github.com/jlowin/fastmcp), it works with any MCP-compatible client including **Claude Code**, **Gemini CLI**, and others.
 
@@ -25,6 +25,7 @@ Built with [FastMCP](https://github.com/jlowin/fastmcp), it works with any MCP-c
 - **Virtual Media:** Mount and eject ISO images remotely.
 - **Dell-Specific:** Firmware updates and detailed XML inventory exports.
 - **Junos Switches:** Query Juniper switch configuration, interfaces, MAC tables, and run arbitrary CLI commands via SSH.
+- **Dell OS10 Switches:** Run read-only `show` queries via SSH; configuration commands are rejected.
 - **Parallelism:** Perform actions on multiple servers simultaneously.
 - **Caching:** Slow inventory calls (`get_firmware_inventory`, `get_hardware_overview`, `get_system_info`) are cached in memory with TTLs to avoid redundant BMC requests.
 
@@ -208,8 +209,14 @@ Switches are defined under a separate `switches:` section in the same file. Only
 switches:
   lab1-switch:
     hostname: "192.168.1.200"
+    vendor: "Juniper"          # optional
     model: "Juniper QFX5120"   # optional
     tags: ["switch", "lab1"]   # optional
+  lab1-dell-switch:
+    hostname: "192.168.1.201"
+    vendor: "Dell"
+    model: "S5232F-ON"
+    tags: ["switch", "lab1"]
 ```
 
 ### Secrets Configuration (`redfish_secrets.yaml`)
@@ -238,5 +245,6 @@ Once the MCP server is running, your AI assistant will discover the Redfish tool
 - "Update the firmware on srv-dell-01 using this URL: http://..."
 - "Show me the MAC address table on lab1-switch"
 - "Run 'show lldp neighbors' on the Junos switch"
+- "Run 'show interface status' on the Dell OS10 switch"
 
 > **Note on caching:** `get_firmware_inventory`, `get_hardware_overview`, and `get_system_info` cache their responses in memory to reduce BMC load. If results look stale after a hardware change, ask the assistant to run `clear_server_cache` for the affected servers. TTL values are configurable in `global_config.yaml`.
