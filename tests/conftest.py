@@ -335,10 +335,42 @@ SUPERMICRO_CHASSIS_DRIVE = {
 # ---------------------------------------------------------------------------
 
 MOCK_CONFIG = {
-    "host1": {"bmc_ip": "10.0.0.1", "vendor": "dell", "lab": "labA", "tags": ["gpu", "compute", "dell", "r750"]},
-    "host100": {"bmc_ip": "10.0.0.100", "vendor": "hpe", "lab": "labB", "tags": ["storage", "hp"]},
-    "host200": {"bmc_ip": "10.0.0.200", "vendor": "dell", "lab": "labA", "tags": ["gpu", "dell", "idrac-10"]},
-    "host500": {"bmc_ip": "10.0.5.100", "vendor": "supermicro", "lab": "labC", "tags": ["dev", "supermicro"]},
+    "host1": {
+        "bmc_ip": "10.0.0.1",
+        "redfish": {"port": 443},
+        "serial_console": {"port": 22, "transport": "auto"},
+        "verify_ssl": False,
+        "vendor": "dell",
+        "lab": "labA",
+        "tags": ["gpu", "compute", "dell", "r750"],
+    },
+    "host100": {
+        "bmc_ip": "10.0.0.100",
+        "redfish": {"port": 443},
+        "serial_console": {"port": 22, "transport": "auto"},
+        "verify_ssl": False,
+        "vendor": "hpe",
+        "lab": "labB",
+        "tags": ["storage", "hp"],
+    },
+    "host200": {
+        "bmc_ip": "10.0.0.200",
+        "redfish": {"port": 443},
+        "serial_console": {"port": 22, "transport": "auto"},
+        "verify_ssl": False,
+        "vendor": "dell",
+        "lab": "labA",
+        "tags": ["gpu", "dell", "idrac-10"],
+    },
+    "host500": {
+        "bmc_ip": "10.0.5.100",
+        "redfish": {"port": 443},
+        "serial_console": {"port": 22, "transport": "auto"},
+        "verify_ssl": False,
+        "vendor": "supermicro",
+        "lab": "labC",
+        "tags": ["dev", "supermicro"],
+    },
 }
 
 MOCK_SECRETS = {
@@ -349,7 +381,12 @@ MOCK_SECRETS = {
 }
 
 MOCK_SWITCHES = {
-    "lab1-switch": {"hostname": "192.168.1.200", "model": "QFX5120", "tags": ["switch"]},
+    "lab1-switch": {
+        "hostname": "192.168.1.200",
+        "port": 22,
+        "model": "QFX5120",
+        "tags": ["switch"],
+    },
 }
 
 MOCK_ISOS = {
@@ -418,6 +455,7 @@ def _isolate_globals():
     config.VIRTUAL_MEDIA_PATH_CACHE.clear()
     helpers._HANDLER_CACHE.clear()
     helpers._http_client = None
+    helpers._verified_http_client = None
     RESPONSE_CACHE.clear()
 
     yield
@@ -430,6 +468,7 @@ def _isolate_globals():
     config.VIRTUAL_MEDIA_PATH_CACHE.clear()
     helpers._HANDLER_CACHE.clear()
     helpers._http_client = None
+    helpers._verified_http_client = None
     RESPONSE_CACHE.clear()
 
 

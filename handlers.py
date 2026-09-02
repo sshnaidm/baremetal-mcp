@@ -16,6 +16,8 @@ class BaseVendorHandler:
     HW_INVENTORY_PATH: str
 
     def __init__(self, user: Optional[str], password: Optional[str]):
+        if not isinstance(user, str) or not user.strip() or not isinstance(password, str) or not password.strip():
+            raise ValueError("BMC username and password are required")
         self.auth: Optional[tuple] = None
         self.headers: Dict[str, str] = {"Content-Type": "application/json", "Accept": "application/json"}
         self._configure_auth(user, password)
@@ -43,7 +45,7 @@ class Dell(BaseVendorHandler):
     )
 
     def _configure_auth(self, user: Optional[str], password: Optional[str]):
-        self.auth = (user or "root", password or "calvin")
+        self.auth = (user, password)
 
 
 class HPE(BaseVendorHandler):
@@ -55,8 +57,6 @@ class HPE(BaseVendorHandler):
     HW_INVENTORY_PATH = ""
 
     def _configure_auth(self, user: Optional[str], password: Optional[str]):
-        user = user or "Administrator"
-        password = password or "password"
         auth_string = base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("utf-8")
         self.headers["Authorization"] = f"Basic {auth_string}"
 
@@ -70,7 +70,7 @@ class Supermicro(BaseVendorHandler):
     HW_INVENTORY_PATH = ""
 
     def _configure_auth(self, user: Optional[str], password: Optional[str]):
-        self.auth = (user or "ADMIN", password or "ADMIN")
+        self.auth = (user, password)
 
 
 VENDOR_MAP: Dict[str, Type[BaseVendorHandler]] = {

@@ -9,22 +9,22 @@ Run with:
 
 from config import mcp, _load_config, logger
 
+# ``fastmcp run main.py`` imports this module and extracts ``mcp`` without
+# calling ``main()``.  Load configuration before registering resources so the
+# advertised CLI path has the same state as the console-script entry point.
+_load_config()
+
 # Import resources to register them
-import resources  # noqa: F401
+import resources  # noqa: E402,F401
 
 # Import all tools to register them with the MCP server
-import tools  # noqa: F401
+import tools  # noqa: E402,F401
 
 
 def main():
     """Start the MCP Redfish server."""
     logger.info("Starting Simplified Redfish MCP Server")
-    logger.info(
-        "Available tools: redfish_call, parallel_redfish_call, get_power_state, "
-        "set_power_state, get_firmware_inventory, get_system_info, ensure_boot_once, "
-        "get_vendor, inject_media, eject_media, boot_from_iso, dell_export_hardware_inventory, "
-        "dell_update_firmware, list_isos, dell_list_url, junos_run_command, list_switches"
-    )
+    logger.info("MCP tools are registered dynamically from the tools package")
     _load_config()
     mcp.run()
 

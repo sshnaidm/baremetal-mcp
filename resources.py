@@ -5,7 +5,15 @@ MCP Resources for host configuration access.
 
 from typing import List
 
-from config import mcp, CONFIG
+import config as cfg
+
+
+mcp = cfg.mcp
+
+
+def _load_config() -> None:
+    """Defensively load state for direct resource imports and in-process use."""
+    cfg._load_config()
 
 
 @mcp.resource("hosts://all")
@@ -17,11 +25,12 @@ def get_all_hosts() -> dict:
 
     Example output
     {
-      "srv01": {"bmc_ip": "10.0.0.5", "vendor": "dell", "lab": "labA", "tags": ["gpu"]},
-      "srv02": {"bmc_ip": "10.0.0.6", "vendor": "hpe"}
+      "srv01": {"bmc_ip": "192.0.2.10", "vendor": "dell", "lab": "labA", "tags": ["gpu"]},
+      "srv02": {"bmc_ip": "192.0.2.11", "vendor": "hpe"}
     }
     """
-    return CONFIG
+    _load_config()
+    return cfg.CONFIG
 
 
 @mcp.resource("hosts://id/{server_id}")
@@ -35,11 +44,12 @@ def get_host_details(server_id: str) -> dict:
     - Raises ValueError if server_id is unknown.
 
     Example output
-    {"bmc_ip": "10.0.0.5", "vendor": "dell", "lab": "labA", "tags": ["gpu"]}
+    {"bmc_ip": "192.0.2.10", "vendor": "dell", "lab": "labA", "tags": ["gpu"]}
     """
-    if server_id not in CONFIG:
+    _load_config()
+    if server_id not in cfg.CONFIG:
         raise ValueError(f"Server '{server_id}' not found in configuration.")
-    return CONFIG[server_id]
+    return cfg.CONFIG[server_id]
 
 
 @mcp.resource("hosts://ids/{server_ids}")
@@ -55,12 +65,13 @@ def get_multiple_host_details(server_ids: str) -> List[dict]:
     Errors
     - Raises ValueError if any server_id is unknown.
     """
+    _load_config()
     ids = [sid.strip() for sid in server_ids.split(",") if sid.strip()]
     hosts: List[dict] = []
     for sid in ids:
-        if sid not in CONFIG:
+        if sid not in cfg.CONFIG:
             raise ValueError(f"Server '{sid}' not found in configuration.")
-        hosts.append(CONFIG[sid])
+        hosts.append(cfg.CONFIG[sid])
     return hosts
 
 
@@ -74,8 +85,9 @@ def get_all_hosts_from_lab(lab: str) -> List[dict]:
     Returns
     - List of host configs, or a single message record when none found.
     """
+    _load_config()
     hosts = []
-    for sid, config in CONFIG.items():
+    for sid, config in cfg.CONFIG.items():
         if config.get("lab") == lab:
             hosts.append(config)
     if not hosts:
@@ -93,8 +105,9 @@ def get_all_hosts_for_tag(tag: str) -> List[dict]:
     Returns
     - List of host configs, or a single message record when none found.
     """
+    _load_config()
     hosts = []
-    for sid, config in CONFIG.items():
+    for sid, config in cfg.CONFIG.items():
         tags = config.get("tags") or []
         if tag in tags:
             hosts.append(config)

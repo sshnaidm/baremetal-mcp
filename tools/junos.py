@@ -12,6 +12,7 @@ import paramiko
 
 import config as cfg
 from config import mcp, SWITCHES, SECRETS, _load_config
+from helpers import _configured_port
 
 
 def _get_command_output(channel, command: str, prompt: str, timeout: int = None) -> str:
@@ -48,12 +49,15 @@ def _junos_ssh_commands_sync(switch_id: str, commands: List[str]) -> Dict:
     host = switch_cfg.get("hostname") or switch_cfg.get("bmc_ip") or switch_cfg.get("address")
     username = creds.get("username")
     password = creds.get("password")
-    port = int(switch_cfg.get("port", 22))
 
     if not host:
         return {"switch_id": switch_id, "status": "error", "message": "No address configured"}
     if not username or not password:
         return {"switch_id": switch_id, "status": "error", "message": "Missing credentials in secrets"}
+    try:
+        port = _configured_port(switch_cfg.get("port"), "switch.port")
+    except ValueError as exc:
+        return {"switch_id": switch_id, "status": "error", "message": str(exc)}
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -72,7 +76,7 @@ def _junos_ssh_commands_sync(switch_id: str, commands: List[str]) -> Dict:
         channel = client.invoke_shell()
 
         initial_buffer = ""
-        deadline = time.time() + 10
+        deadline = time.time() + cfg.SSH_TIMEOUT
         while not initial_buffer.strip().endswith((">", "#")):
             if time.time() > deadline:
                 return {"switch_id": switch_id, "status": "error", "message": "Timed out waiting for prompt"}
