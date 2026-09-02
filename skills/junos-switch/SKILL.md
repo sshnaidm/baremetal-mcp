@@ -32,5 +32,5 @@ description: Query Juniper Junos switches through the baremetal MCP when inspect
 
 - Connects via SSH with password authentication. Credentials come from `redfish_secrets.yaml`.
 - Each call opens a fresh SSH session (no persistent connections).
-- Switch entries are under the `switches:` key in the config file. `hostname` (management IP) is the only required field. `vendor`, `model`, and `tags` are optional. Credentials in `redfish_secrets.yaml`, optional `port` (default 22).
+- Switch entries are under the `switches:` key in the config file. `hostname` and the SSH `port` are required after `switch_defaults` and per-switch overrides are merged. `vendor`, `model`, and `tags` are optional. Credentials belong in `redfish_secrets.yaml`.
 - Prefer read-only operational commands. Do not run disruptive commands such as reboot, request, clear, or configuration changes unless the user explicitly authorizes them.

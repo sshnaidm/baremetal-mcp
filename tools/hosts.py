@@ -31,7 +31,7 @@ def list_hosts() -> Dict:
     - {"status": "success", "data": {<server_id>: <config>, ...}}
 
     Example
-    {"status": "success", "data": {"srv01": {"bmc_ip": "10.0.0.5", "vendor": "dell"}}}
+    {"status": "success", "data": {"srv01": {"bmc_ip": "192.0.2.10", "vendor": "dell"}}}
     """
     err = _check_config()
     if err:

@@ -4,13 +4,13 @@ This file provides guidance to AI coding assistants working with this repository
 
 ## What This Is
 
-An MCP (Model Context Protocol) server that exposes Redfish BMC operations (Dell iDRAC, HPE iLO, Supermicro) and Junos/Dell OS10 switch queries as tools for AI assistants. Built with FastMCP, it provides inventory, power management, virtual media, boot control, Dell firmware updates, and network switch CLI access.
+An MCP (Model Context Protocol) server that exposes Redfish BMC operations (Dell iDRAC, HPE iLO, Supermicro), BMC console capture and command paging, and Junos/Dell OS10 switch queries as tools for AI assistants.
 
 ## Running the Server
 
 ```bash
 # Install dependencies
-pip install fastmcp httpx PyYAML urllib3 paramiko
+pip install -e '.[test]'
 
 # Run via stdio (for Claude Code / Gemini CLI / MCP clients)
 fastmcp run -t stdio main.py
@@ -19,7 +19,7 @@ fastmcp run -t stdio main.py
 fastmcp run --port 5004 --host 127.0.0.1 -t streamable-http main.py
 ```
 
-No test suite exists currently. Validation is done by running the server against real or stubbed BMC endpoints.
+Run `pytest` for the unit and in-process MCP contract suite. Live-device checks are explicit, opt-in, and read-only unless the user separately authorizes a state change.
 
 ## Configuration
 
@@ -30,7 +30,7 @@ Four YAML files control behavior (paths set via env vars or defaults):
 - `REDFISH_SECRETS` → `redfish_secrets.yaml` — per-server/switch credentials (username/password)
 - `ISOS_FILE` → `isos.yaml` — firmware/ISO URL catalog (Dell firmware .EXE URLs keyed by model/target/version)
 
-See `*.example.yaml` files for format. The config file supports a top-level `servers:` key (for Redfish hosts, loaded into `CONFIG`) and an optional `switches:` key (for switches, loaded into `SWITCHES`). Switch entries use `hostname` for the management IP; `vendor`, `model`, and `tags` are all optional.
+See `*.example.yaml` files for format. The config file supports `server_defaults`, `switch_defaults`, a top-level `servers:` key (for Redfish hosts, loaded into `CONFIG`), and an optional `switches:` key (for switches, loaded into `SWITCHES`). Connection ports are explicit YAML values: Redfish uses `redfish.port`, SOL/VSP uses `serial_console.port`, VNC uses `vnc.port`, and switches use `port`. Per-target mappings override their corresponding defaults. Switch entries use `hostname` for the management IP; `vendor`, `model`, and `tags` are optional.
 
 ## Architecture
 
@@ -43,6 +43,14 @@ See `*.example.yaml` files for format. The config file supports a top-level `ser
    - `server.py` — power state, firmware inventory, system info, hardware overview, boot control, cache management
    - `media.py` — virtual media mount/unmount/boot-from-ISO
    - `dell.py` — Dell-specific: firmware update, hardware inventory XML export, ISO catalog
+   - `console.py` — read-only framebuffer capture plus explicitly input-capable command/pager tools returned as MCP image content
+   - `vnc_capture_worker.py` — isolated one-shot vncdotool process for capture, command typing, and guarded pager keys
+   - `serial_console.py` — guarded Dell SOL/HPE VSP execution, result markers, sent-state tracking, and bounded batches
+   - `configuration.py` — sanitized host/capability preflight without exposing secret values
+   - `network_collect.py` — short-command Linux network collection, parsing, and identity validation
+   - `network_hardware.py` — vendor-neutral read-only Redfish NIC/adapter/port queries
+   - `network_inventory.py` — persistent per-host YAML, validation, searches, and aggregate indexes
+   - `operations.py` — in-memory background fleet operations and safe console retry selection
    - `dell_switch.py` — read-only Dell OS10 switch queries via SSH (`dell_switch_run_command`)
    - `junos.py` — Junos switch queries via SSH (`junos_run_command`)
    - `redfish.py` — low-level `redfish_call` and `parallel_redfish_call` passthrough
@@ -54,12 +62,12 @@ See `*.example.yaml` files for format. The config file supports a top-level `ser
 
 **Key patterns:**
 
-- All multi-server tools accept `List[str]` of server_ids and run operations via `asyncio.gather` for parallelism
-- Tool return format is always `{"status": "success"|"error", ...}` dicts
+- Multi-server tools deduplicate IDs, apply batch-size and concurrency limits, preserve stable result order, and use parallelism where safe.
+- Tools return structured `{"status": "success"|"partial"|"error", ...}` data. Console tools additionally return native MCP `ImageContent`.
 - Vendor detection is auto-discovered from Redfish `/redfish/v1` OEM data if not in config, then cached
 - Handler instances and virtual media paths are cached in module-level dicts
-- `helpers._redfish_call` retries on 5xx errors and connection failures (up to 3 attempts with backoff)
-- HTTP client uses `httpx.AsyncClient` with `verify=False` (BMC self-signed certs)
+- `helpers._redfish_call` retries only GET/HEAD/OPTIONS on 5xx and connection failures. Mutating methods are attempted once because their outcome can be ambiguous.
+- HTTP clients separate verified and unverified TLS pools. Configure the boolean `verify_ssl` explicitly on a host or in `server_defaults`; do not infer a TLS policy in connection code.
 - Tool registration happens at import time via `@mcp.tool()` decorators; `tools/__init__.py` imports all tool modules
 - Slow/static responses are cached in memory with TTLs: `get_firmware_inventory`, `get_hardware_overview`, `get_system_info`; `dell_export_hardware_inventory` uses a disk cache. TTL values are configurable in `global_config.yaml` (defaults in `config.py`).
 
@@ -84,7 +92,8 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 - `get_system_info`: Quick summary (manufacturer, model, serial, power state, health, BIOS version, BMC firmware version). Only 2 Redfish requests per server — prefer this for BIOS + iDRAC/iLO versions.
 - `get_hardware_overview`: Unified view of CPUs, memory, NICs, and storage (drives/volumes). Compatible with Dell, HPE, and Supermicro (includes SimpleStorage and Chassis-based drive fallbacks for older Supermicro BMCs).
 - `get_firmware_inventory`: Lists firmware components and versions. Always use `name_filter` to limit results (e.g., `["PERC"]`, `["Ethernet"]`). Without a filter, returns 30-40+ entries per server.
-- `dell_export_hardware_inventory`: Dell-only, extremely detailed OEM hardware XML. Use as last resort.
+- `export_hardware_inventory_xml`: Dell-only detailed OEM XML with task polling, identity checks, XML validation, atomic files, SHA-256 values, and a manifest. Metadata is returned by default.
+- `dell_export_hardware_inventory`: compatibility wrapper that includes raw XML; prefer the metadata-first batch tool.
 
 ## Power & Boot Management
 
@@ -95,7 +104,7 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 ## Virtual Media & ISOs
 
 - `list_isos`: List available ISO images from `isos.yaml`.
-- `boot_from_iso`: Mount a remote ISO, set boot to CD (Once), and reboot in a single call.
+- `boot_from_iso`: Mount a remote ISO, verify the exact media and CD/Once state, then reboot. Verification failure stops before reset.
 - `inject_media` / `eject_media`: Idempotent tools to mount/unmount virtual media.
 
 ## Dell-Specific Operations
@@ -103,10 +112,35 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 - `dell_update_firmware`: Initiate iDRAC or BIOS update using a remote URL (.EXE DUP).
 - `dell_list_url`: Retrieve firmware URLs from ISO configuration by model and version.
 
+## BMC Console Operations
+
+- `run_console_command_batch`: Normal text path over Dell SOL/HPE VSP. It defaults to a no-connection dry run; execution requires `dry_run=false` and `confirm_command == command`. Trust success only with a confirmed exit marker. Never retry `command_sent=true` with an unknown result.
+- `start_console_command_batch` / `get_operation`: Background form for fleet commands that may exceed client timeouts. `retry_console_operation_failures` includes only hosts proven not to have received the command.
+- Completed background operations conservatively aggregate `remote_state`, `outcome_unknown`, and `retry_safe`; inspect per-host results whenever `remote_state` is `mixed` or `unknown`.
+- `capture_console_screen(server_id)`: Capture VNC without input and return a short-lived `input_confirmation_token` with the image.
+- `run_console_command(server_id, command, confirmation_token, wait_seconds)`: VNC fallback. Use only after visually inspecting the exact token-producing capture.
+- `console_pager_action(server_id, session_id, action, wait_seconds, confirmation_token=None)`: Capture or navigate the active pager with `refresh`, `next_page`, `previous_page`, `first_page`, `last_page`, `quit`, or `interrupt`. If tracking expired, first make and inspect a fresh post-expiry capture, then pass its token to authorize one recovery action. `abandon` clears local tracking without input only after the fresh image visibly proves that no pager is active. Inspect each returned image and quit after `(END)`.
+- Configure `vnc.port` and `vnc.key_delay`, plus optional `vnc.timeout`, on the server entry; store the separate password as `vnc_password` in the secrets entry.
+- Command text is visible on the host console and may enter shell history. Never place credentials in it. Commands use `/dev/null` for stdin; interactive commands are unsupported. `less` and POSIX `sh` are required on the host.
+- Direct VNC does not provide the iDRAC SSL tunnel. If VNC SSL encryption is enabled, require an external tunnel instead of changing the BMC configuration.
+
 ## Junos Switch Operations
 
 - `list_switches`: List all switches from the `switches:` section of the configuration.
-- `junos_run_command(switch_id, command)`: Run any CLI command on a switch via SSH. Paging is automatically disabled. Switches are defined under the `switches:` key in the config file. `hostname` is used for the management IP; `vendor`, `model`, and `tags` are all optional. Credentials come from `redfish_secrets.yaml`, optional `port` defaults to 22.
+- `junos_run_command(switch_id, command)`: Run any CLI command on a switch via SSH. Paging is automatically disabled. Switches are defined under the `switches:` key in the config file. `hostname` is used for the management IP; `vendor`, `model`, and `tags` are optional. Credentials come from `redfish_secrets.yaml`; the SSH `port` must be present directly or through `switch_defaults`.
+
+## Persistent Network Inventory
+
+- `collect_network_inventory`: Run short read-only Linux probes over SOL/VSP, compare OS DMI identity with Redfish, configured serials, and expected host MACs, and persist only `identity.status=verified` observations. Both mismatched and unverified collections remain unsaved. It reports guarded VNC fallback instead of fabricating OCR output.
+- `get_network_hardware`: Read firmware-visible Ethernet interfaces, adapters, ports, and device functions over Redfish; keep this provenance distinct from OS observations.
+- `save_network_inventory`: Validate and save the latest host snapshot under `network_inventory/hosts` as schema-versioned YAML. Never include credentials.
+- `save_network_inventories`: Batch save with duplicate-ID and stale-snapshot guards.
+- `get_network_inventory`: Return one saved host document.
+- `list_network_inventories`: Summarize all saved hosts with interface, active-link, and address counts.
+- `search_network_inventory`: Paginated search by normalized MAC, interface-name substring, link state, exact IP or subnet, vendor substring, PCI address, and server ID.
+- `validate_network_inventories`: Report coverage, freshness, malformed files, duplicate MAC ownership, connected links without MACs, and configured identity mismatches.
+- `export_network_inventory`: Atomically produce one YAML/JSON file with connected, MAC, IP, and separate BMC-MAC indexes.
+- Configure the directory with `NETWORK_INVENTORY_DIR` (highest precedence) or `network_inventory_dir` in `global_config.yaml`.
 
 ## Dell OS10 Switch Operations
 
@@ -114,7 +148,7 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 
 ## Low-Level Access
 
-- `redfish_call` / `parallel_redfish_call`: Custom Redfish requests not covered by high-level tools. Research standard Redfish paths for the vendor and use these.
+- `redfish_call` / `parallel_redfish_call`: Custom same-BMC Redfish requests not covered by high-level tools. Paths cannot change origin. Reads execute normally; POST/PUT/PATCH/DELETE default to no-request dry runs and require `dry_run=false` plus `confirm_method_path` set to the exact returned `required_confirmation`. Prefer declarative high-level tools.
 
 ## Operational Guidance
 
@@ -127,7 +161,4 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 
 ## Skills
 
-`skills/update-dell-firmware/SKILL.md` — guided workflow for Dell firmware updates using the tool chain: `get_vendor` → `list_isos`/`dell_list_url` → `dell_update_firmware`.
-`skills/junos-switch/SKILL.md` — guided workflow for querying Junos switches via `junos_run_command`.
-`skills/dell-switch/SKILL.md` — guided workflow for read-only Dell OS10 queries via `dell_switch_run_command`.
-`SKILLS.md` — check firmware versions workflow: when to use `get_system_info` vs `get_firmware_inventory`.
+All reusable workflows use the portable Agent Skills `SKILL.md` format with YAML frontmatter and model-neutral instructions. See `SKILLS.md`; do not add client-specific metadata or reimplement MCP behavior in skill-local scripts.
