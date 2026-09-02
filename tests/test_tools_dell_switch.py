@@ -1,6 +1,6 @@
-"""Tests for tools/dell_switch.py - Dell OS10 read-only SSH queries."""
+"""Tests for tools/dell_switch.py - Dell OS10 read-only and confirmed CLI execution."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import paramiko
 
@@ -149,3 +149,153 @@ class TestDellSwitchRunCommand:
 
         result = await dell_switch_run_command("test-switch", "show version")
         assert result["status"] == "error"
+
+
+class TestDellSwitchApplyCommandsSync:
+    def test_runs_configuration_and_save_commands(self, monkeypatch):
+        import config
+
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
+        config.SECRETS["test-switch"] = {"username": "admin", "password": "pass"}
+        mock_client = MagicMock(spec=paramiko.SSHClient)
+        mock_channel = MagicMock()
+        recv_data = iter(
+            [
+                b"Dell EMC Networking OS10\r\nadmin@switch# ",
+                b"terminal length 0\r\nadmin@switch# ",
+                b"configure terminal\r\nadmin@switch(config)# ",
+                b"hostname replacement\r\nadmin@switch(config)# ",
+                b"end\r\nadmin@switch# ",
+                b"copy running-configuration startup-configuration\r\nCopy completed\r\nadmin@switch# ",
+            ]
+        )
+        mock_channel.recv_ready.return_value = True
+        mock_channel.recv.side_effect = lambda size: next(recv_data)
+        mock_client.invoke_shell.return_value = mock_channel
+        monkeypatch.setattr("tools.dell_switch.paramiko.SSHClient", lambda: mock_client)
+
+        from tools.dell_switch import _dell_switch_apply_commands_sync
+
+        commands = [
+            "configure terminal",
+            "hostname replacement",
+            "end",
+            "copy running-configuration startup-configuration",
+        ]
+        result = _dell_switch_apply_commands_sync("test-switch", commands, True)
+
+        assert result["status"] == "success"
+        assert result["commands_executed"] == commands
+        assert [item["command"] for item in result["command_results"]] == commands
+        for command in commands:
+            mock_channel.send.assert_any_call(f"{command}\n")
+
+    def test_stops_after_cli_error(self, monkeypatch):
+        import config
+
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
+        config.SECRETS["test-switch"] = {"username": "admin", "password": "pass"}
+        mock_client = MagicMock(spec=paramiko.SSHClient)
+        mock_channel = MagicMock()
+        recv_data = iter(
+            [
+                b"admin@switch# ",
+                b"terminal length 0\r\nadmin@switch# ",
+                b"bad command\r\n% Error: invalid command\r\nadmin@switch# ",
+            ]
+        )
+        mock_channel.recv_ready.return_value = True
+        mock_channel.recv.side_effect = lambda size: next(recv_data)
+        mock_client.invoke_shell.return_value = mock_channel
+        monkeypatch.setattr("tools.dell_switch.paramiko.SSHClient", lambda: mock_client)
+
+        from tools.dell_switch import _dell_switch_apply_commands_sync
+
+        result = _dell_switch_apply_commands_sync("test-switch", ["bad command", "reload"], True)
+
+        assert result["status"] == "error"
+        assert result["commands_executed"] == ["bad command"]
+        assert call("reload\n") not in mock_channel.send.call_args_list
+
+
+class TestDellSwitchApplyCommands:
+    async def test_dry_run_allows_configuration_and_save_commands(self):
+        from tools.dell_switch import dell_switch_apply_commands
+
+        commands = [
+            "configure terminal",
+            "interface breakout 1/1/3 map 25g-4x",
+            "end",
+            "copy running-configuration startup-configuration",
+        ]
+        result = await dell_switch_apply_commands(["test-switch"], commands)
+
+        assert result["status"] == "success"
+        assert result["phase"] == "dry-run"
+        assert result["plan"]["commands"] == commands
+        assert result["plan"]["session_setup"] == ["terminal length 0"]
+        assert result["plan"]["commands_are_unrestricted"] is True
+        assert result["confirmation_required"].startswith("APPLY DELL SWITCH COMMANDS ")
+
+    async def test_requires_exact_confirmation_before_connecting(self, monkeypatch):
+        from tools.dell_switch import dell_switch_apply_commands
+
+        mock_apply = MagicMock()
+        monkeypatch.setattr("tools.dell_switch._dell_switch_apply_commands", mock_apply)
+
+        result = await dell_switch_apply_commands(
+            ["test-switch"],
+            ["write memory"],
+            dry_run=False,
+            confirmation="wrong",
+        )
+
+        assert result["status"] == "error"
+        assert result["phase"] == "confirmation"
+        mock_apply.assert_not_called()
+
+    async def test_executes_on_multiple_switches_after_confirmation(self, monkeypatch):
+        from tools.dell_switch import dell_switch_apply_commands
+
+        commands = ["configure terminal", "vlan 307", "end", "write memory"]
+        dry_run = await dell_switch_apply_commands(["switch-1", "switch-2"], commands)
+
+        async def mock_apply(switch_id, supplied_commands, stop_on_error):
+            assert supplied_commands == commands
+            assert stop_on_error is True
+            return {"switch_id": switch_id, "status": "success"}
+
+        monkeypatch.setattr("tools.dell_switch._dell_switch_apply_commands", mock_apply)
+        result = await dell_switch_apply_commands(
+            ["switch-1", "switch-2"],
+            commands,
+            dry_run=False,
+            confirmation=dry_run["confirmation_required"],
+        )
+
+        assert result["status"] == "success"
+        assert [item["switch_id"] for item in result["results"]] == ["switch-1", "switch-2"]
+
+    async def test_rejects_multiline_command(self):
+        from tools.dell_switch import dell_switch_apply_commands
+
+        result = await dell_switch_apply_commands(["test-switch"], ["show version\nreload"])
+
+        assert result["status"] == "error"
+        assert result["phase"] == "validation"
+
+    async def test_rejects_duplicate_switch_ids_after_normalization(self):
+        from tools.dell_switch import dell_switch_apply_commands
+
+        result = await dell_switch_apply_commands(["test-switch", " test-switch "], ["show version"])
+
+        assert result["status"] == "error"
+        assert result["phase"] == "validation"
+
+    async def test_confirmation_changes_with_plan(self):
+        from tools.dell_switch import dell_switch_apply_commands
+
+        first = await dell_switch_apply_commands(["test-switch"], ["show version"])
+        second = await dell_switch_apply_commands(["test-switch"], ["write memory"])
+
+        assert first["confirmation_required"] != second["confirmation_required"]

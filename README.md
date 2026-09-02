@@ -28,7 +28,7 @@ Built with [FastMCP](https://github.com/jlowin/fastmcp), it works with any MCP-c
 - **BMC Console Tools:** Run guarded Dell SOL/HPE VSP commands in batches, or capture and page through a visually confirmed VNC console.
 - **Network Inventory:** Collect Linux network facts, query firmware-visible Redfish NIC ports, save per-host YAML, validate identity and duplicates, and export searchable MAC/IP indexes.
 - **Junos Switches:** Query Juniper switch configuration, interfaces, MAC tables, and run arbitrary CLI commands via SSH.
-- **Dell OS10 Switches:** Run read-only `show` queries via SSH; configuration commands are rejected.
+- **Dell OS10 Switches:** Run read-only `show` queries or dry-run/confirm unrestricted CLI sequences across switches via SSH.
 - **Parallelism:** Perform actions on multiple servers simultaneously.
 - **Caching:** Slow inventory calls (`get_firmware_inventory`, `get_hardware_overview`, `get_system_info`) are cached in memory with TTLs to avoid redundant BMC requests.
 
@@ -331,6 +331,7 @@ Once the MCP server is running, your AI assistant will discover the Redfish tool
 - "Show me the MAC address table on lab1-switch"
 - "Run 'show lldp neighbors' on the Junos switch"
 - "Run 'show interface status' on the Dell OS10 switch"
+- "Dry-run these Dell OS10 configuration commands on both switches, then run the unchanged confirmed plan"
 - "Capture the console screen for srv-dell-01 and explain what is happening"
 - "Run `journalctl -b` on the console, inspect every page, and tell me why boot failed"
 - "Dry-run `systemctl restart NetworkManager` for these hosts over SOL, then execute it only on the confirmed targets"

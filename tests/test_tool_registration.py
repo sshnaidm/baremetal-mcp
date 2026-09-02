@@ -13,6 +13,7 @@ EXPECTED_TOOLS = {
     "console_pager_action",
     "dell_export_hardware_inventory",
     "dell_list_url",
+    "dell_switch_apply_commands",
     "dell_switch_run_command",
     "dell_update_firmware",
     "eject_media",

@@ -51,7 +51,7 @@ See `*.example.yaml` files for format. The config file supports `server_defaults
    - `network_hardware.py` — vendor-neutral read-only Redfish NIC/adapter/port queries
    - `network_inventory.py` — persistent per-host YAML, validation, searches, and aggregate indexes
    - `operations.py` — in-memory background fleet operations and safe console retry selection
-   - `dell_switch.py` — read-only Dell OS10 switch queries via SSH (`dell_switch_run_command`)
+   - `dell_switch.py` — read-only Dell OS10 queries plus confirmation-gated unrestricted command sequences via SSH
    - `junos.py` — Junos switch queries via SSH (`junos_run_command`)
    - `redfish.py` — low-level `redfish_call` and `parallel_redfish_call` passthrough
 2. **`resources.py`** — MCP resources (`hosts://all`, `hosts://id/{id}`, etc.) for read-only host config access
@@ -145,6 +145,7 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 ## Dell OS10 Switch Operations
 
 - `dell_switch_run_command(switch_id, command)`: Run a read-only Dell OS10 `show` command via SSH. The tool rejects configuration commands and embedded newlines before connecting. Paging is disabled only for the SSH session with `terminal length 0`.
+- `dell_switch_apply_commands(switch_ids, commands, dry_run, confirmation, stop_on_error)`: Run an ordered, unrestricted OS10 CLI sequence on one or more switches. It defaults to dry-run, binds exact confirmation to the complete plan, uses one SSH session per switch, and runs switches in parallel. Configuration and startup-save commands are allowed.
 
 ## Low-Level Access
 
