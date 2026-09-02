@@ -9,5 +9,12 @@ from tools import redfish
 from tools import server
 from tools import media
 from tools import dell
+from tools import console
+from tools import serial_console
+from tools import configuration
+from tools import network_inventory
+from tools import network_collect
+from tools import network_hardware
+from tools import operations
 from tools import dell_switch
 from tools import junos
