@@ -11,4 +11,4 @@ The repository ships model-neutral [Agent Skills](https://agentskills.io/specifi
 - [`inspect-firmware`](skills/inspect-firmware/SKILL.md) — choose the appropriate Redfish tool for firmware checks and comparisons.
 - [`update-dell-firmware`](skills/update-dell-firmware/SKILL.md) — submit an explicitly requested Dell firmware update with guarded reboot handling.
 - [`junos-switch`](skills/junos-switch/SKILL.md) — query Juniper Junos switches.
-- [`dell-switch`](skills/dell-switch/SKILL.md) — run read-only Dell SmartFabric OS10 queries.
+- [`dell-switch`](skills/dell-switch/SKILL.md) — run read-only queries or confirmed unrestricted Dell SmartFabric OS10 command sequences.
