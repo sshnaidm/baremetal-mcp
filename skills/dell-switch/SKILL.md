@@ -31,5 +31,5 @@ description: Query Dell SmartFabric OS10 switches through the baremetal MCP when
 
 - Credentials come from `redfish_secrets.yaml`; do not put them in the switch configuration.
 - Each call opens a fresh SSH session.
-- Switch entries use `hostname`; `vendor`, `model`, `tags`, and `port` are optional.
+- Switch entries use `hostname` and require an SSH `port` directly or through `switch_defaults`; `vendor`, `model`, and `tags` are optional. Credentials belong in `redfish_secrets.yaml`.
 - The implementation targets Dell SmartFabric OS10. Other Dell switch operating systems have different CLI behavior and are not currently supported.
