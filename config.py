@@ -3,11 +3,12 @@
 Configuration, globals, and constants for MCP Redfish Server.
 """
 
+import copy
 import logging
 import os
 import yaml
 from logging.handlers import RotatingFileHandler
-from typing import Dict
+from typing import Any, Dict, Optional
 
 from fastmcp import FastMCP
 
@@ -52,6 +53,20 @@ TTL_SYSTEM_INFO = 1800
 TTL_DISK_CACHE = 86400
 SSH_TIMEOUT = 15
 SSH_COMMAND_TIMEOUT = 60
+VNC_CAPTURE_TIMEOUT = 30
+NETWORK_INVENTORY_DIR = os.getenv("NETWORK_INVENTORY_DIR", "network_inventory")
+SOL_CONNECT_TIMEOUT = 10
+CONSOLE_COMMAND_TIMEOUT = 60
+CONSOLE_BATCH_CONCURRENCY = 6
+CONSOLE_OUTPUT_LIMIT = 65536
+CONSOLE_SESSION_TTL = 300
+OPERATION_TTL = 3600
+NETWORK_COLLECTION_CONCURRENCY = 6
+BATCH_CONCURRENCY = 6
+HARDWARE_INVENTORY_DIR = os.getenv("HARDWARE_INVENTORY_DIR", "data/hardware_inventory")
+HARDWARE_INVENTORY_TIMEOUT = 300
+HARDWARE_INVENTORY_POLL_INTERVAL = 2.0
+HARDWARE_INVENTORY_MAX_BYTES = 50 * 1024 * 1024
 
 CONFIG_FILE = os.getenv("REDFISH_CONFIG", "redfish_servers.yaml")
 SECRETS_FILE = os.getenv("REDFISH_SECRETS", "redfish_secrets.yaml")
@@ -77,12 +92,56 @@ BOOT_TARGET_ALIASES: Dict[str, str] = {
 }
 
 
+def _bounded_setting(
+    name: str,
+    current: Any,
+    *,
+    integer: bool = False,
+    minimum: float,
+    maximum: float,
+) -> Any:
+    """Read one numeric setting, retaining a safe default when invalid."""
+    value = SETTINGS.get(name, current)
+    try:
+        if isinstance(value, bool):
+            raise ValueError
+        parsed = int(value) if integer else float(value)
+        if not minimum <= parsed <= maximum:
+            raise ValueError
+        return parsed
+    except (TypeError, ValueError):
+        logger.warning(
+            "Ignoring invalid %s=%r; expected %s between %s and %s",
+            name,
+            value,
+            "an integer" if integer else "a number",
+            minimum,
+            maximum,
+        )
+        return current
+
+
 def _normalize_boot_target(target: str):
     """Normalize boot target string to Redfish enum."""
     if not target:
         return None
     t = target.strip().lower()
     return BOOT_TARGET_ALIASES.get(t) or (target if target[0].isupper() else None)
+
+
+def _merge_connection_defaults(defaults: Any, entry: Any) -> Any:
+    """Deep-merge YAML connection defaults without sharing nested objects."""
+    if not isinstance(defaults, dict):
+        defaults = {}
+    if not isinstance(entry, dict):
+        return copy.deepcopy(entry)
+    merged = copy.deepcopy(defaults)
+    for key, value in entry.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_connection_defaults(merged[key], value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
 
 
 def _load_config():
@@ -92,7 +151,12 @@ def _load_config():
     """
     global DEFAULT_TIMEOUT, MAX_RETRIES, BACKOFF_FACTOR
     global TTL_FIRMWARE_INVENTORY, TTL_HARDWARE_OVERVIEW, TTL_SYSTEM_INFO, TTL_DISK_CACHE
-    global SSH_TIMEOUT, SSH_COMMAND_TIMEOUT
+    global SSH_TIMEOUT, SSH_COMMAND_TIMEOUT, VNC_CAPTURE_TIMEOUT
+    global SOL_CONNECT_TIMEOUT, CONSOLE_COMMAND_TIMEOUT, CONSOLE_BATCH_CONCURRENCY
+    global CONSOLE_OUTPUT_LIMIT, CONSOLE_SESSION_TTL, NETWORK_COLLECTION_CONCURRENCY
+    global BATCH_CONCURRENCY, OPERATION_TTL
+    global HARDWARE_INVENTORY_DIR, HARDWARE_INVENTORY_TIMEOUT, HARDWARE_INVENTORY_POLL_INTERVAL
+    global HARDWARE_INVENTORY_MAX_BYTES
 
     config_file = CONFIG_FILE
     secrets_file = SECRETS_FILE
@@ -106,15 +170,85 @@ def _load_config():
                 raw_settings = yaml.safe_load(f) or {}
                 if isinstance(raw_settings, dict):
                     SETTINGS.update(raw_settings)
-                    DEFAULT_TIMEOUT = SETTINGS.get("default_timeout", DEFAULT_TIMEOUT)
-                    MAX_RETRIES = SETTINGS.get("max_retries", MAX_RETRIES)
-                    BACKOFF_FACTOR = SETTINGS.get("backoff_factor", BACKOFF_FACTOR)
-                    TTL_FIRMWARE_INVENTORY = SETTINGS.get("cache_ttl_firmware_inventory", TTL_FIRMWARE_INVENTORY)
-                    TTL_HARDWARE_OVERVIEW = SETTINGS.get("cache_ttl_hardware_overview", TTL_HARDWARE_OVERVIEW)
-                    TTL_SYSTEM_INFO = SETTINGS.get("cache_ttl_system_info", TTL_SYSTEM_INFO)
-                    TTL_DISK_CACHE = SETTINGS.get("cache_ttl_disk_cache", TTL_DISK_CACHE)
-                    SSH_TIMEOUT = SETTINGS.get("ssh_timeout", SSH_TIMEOUT)
-                    SSH_COMMAND_TIMEOUT = SETTINGS.get("ssh_command_timeout", SSH_COMMAND_TIMEOUT)
+                    DEFAULT_TIMEOUT = _bounded_setting(
+                        "default_timeout", DEFAULT_TIMEOUT, minimum=1, maximum=3600
+                    )
+                    MAX_RETRIES = _bounded_setting(
+                        "max_retries", MAX_RETRIES, integer=True, minimum=1, maximum=10
+                    )
+                    BACKOFF_FACTOR = _bounded_setting(
+                        "backoff_factor", BACKOFF_FACTOR, minimum=0, maximum=60
+                    )
+                    TTL_FIRMWARE_INVENTORY = _bounded_setting(
+                        "cache_ttl_firmware_inventory", TTL_FIRMWARE_INVENTORY,
+                        integer=True, minimum=0, maximum=31_536_000,
+                    )
+                    TTL_HARDWARE_OVERVIEW = _bounded_setting(
+                        "cache_ttl_hardware_overview", TTL_HARDWARE_OVERVIEW,
+                        integer=True, minimum=0, maximum=31_536_000,
+                    )
+                    TTL_SYSTEM_INFO = _bounded_setting(
+                        "cache_ttl_system_info", TTL_SYSTEM_INFO,
+                        integer=True, minimum=0, maximum=31_536_000,
+                    )
+                    TTL_DISK_CACHE = _bounded_setting(
+                        "cache_ttl_disk_cache", TTL_DISK_CACHE,
+                        integer=True, minimum=0, maximum=31_536_000,
+                    )
+                    SSH_TIMEOUT = _bounded_setting(
+                        "ssh_timeout", SSH_TIMEOUT, minimum=1, maximum=600
+                    )
+                    SSH_COMMAND_TIMEOUT = _bounded_setting(
+                        "ssh_command_timeout", SSH_COMMAND_TIMEOUT, minimum=1, maximum=3600
+                    )
+                    VNC_CAPTURE_TIMEOUT = _bounded_setting(
+                        "vnc_capture_timeout", VNC_CAPTURE_TIMEOUT, minimum=1, maximum=300
+                    )
+                    SOL_CONNECT_TIMEOUT = _bounded_setting(
+                        "sol_connect_timeout", SOL_CONNECT_TIMEOUT, minimum=1, maximum=300
+                    )
+                    CONSOLE_COMMAND_TIMEOUT = _bounded_setting(
+                        "console_command_timeout", CONSOLE_COMMAND_TIMEOUT, minimum=1, maximum=3600
+                    )
+                    CONSOLE_BATCH_CONCURRENCY = _bounded_setting(
+                        "console_batch_concurrency", CONSOLE_BATCH_CONCURRENCY,
+                        integer=True, minimum=1, maximum=12,
+                    )
+                    CONSOLE_OUTPUT_LIMIT = _bounded_setting(
+                        "console_output_limit", CONSOLE_OUTPUT_LIMIT,
+                        integer=True, minimum=1024, maximum=1_048_576,
+                    )
+                    CONSOLE_SESSION_TTL = _bounded_setting(
+                        "console_session_ttl", CONSOLE_SESSION_TTL,
+                        integer=True, minimum=10, maximum=86_400,
+                    )
+                    OPERATION_TTL = _bounded_setting(
+                        "operation_ttl", OPERATION_TTL,
+                        integer=True, minimum=60, maximum=86_400,
+                    )
+                    NETWORK_COLLECTION_CONCURRENCY = _bounded_setting(
+                        "network_collection_concurrency", NETWORK_COLLECTION_CONCURRENCY,
+                        integer=True, minimum=1, maximum=12,
+                    )
+                    BATCH_CONCURRENCY = _bounded_setting(
+                        "batch_concurrency", BATCH_CONCURRENCY,
+                        integer=True, minimum=1, maximum=12,
+                    )
+                    HARDWARE_INVENTORY_DIR = os.getenv("HARDWARE_INVENTORY_DIR") or SETTINGS.get(
+                        "hardware_inventory_dir", HARDWARE_INVENTORY_DIR
+                    )
+                    HARDWARE_INVENTORY_TIMEOUT = _bounded_setting(
+                        "hardware_inventory_timeout", HARDWARE_INVENTORY_TIMEOUT,
+                        minimum=1, maximum=3600,
+                    )
+                    HARDWARE_INVENTORY_POLL_INTERVAL = _bounded_setting(
+                        "hardware_inventory_poll_interval", HARDWARE_INVENTORY_POLL_INTERVAL,
+                        minimum=0.1, maximum=30,
+                    )
+                    HARDWARE_INVENTORY_MAX_BYTES = _bounded_setting(
+                        "hardware_inventory_max_bytes", HARDWARE_INVENTORY_MAX_BYTES,
+                        integer=True, minimum=1024, maximum=268_435_456,
+                    )
 
     # Load CONFIG if empty
     if not CONFIG:
@@ -123,14 +257,42 @@ def _load_config():
         else:
             with open(config_file, "r") as f:
                 raw_config = yaml.safe_load(f) or {}
-                servers_section = raw_config.get("servers", raw_config)
+                server_defaults = raw_config.get("server_defaults", {})
+                switch_defaults = raw_config.get("switch_defaults", {})
+                if not isinstance(server_defaults, dict):
+                    logger.warning("Invalid server_defaults: expected a mapping; ignoring it")
+                    server_defaults = {}
+                if not isinstance(switch_defaults, dict):
+                    logger.warning("Invalid switch_defaults: expected a mapping; ignoring it")
+                    switch_defaults = {}
+
+                if "servers" in raw_config:
+                    servers_section = raw_config.get("servers")
+                else:
+                    reserved = {"labs", "server_defaults", "switch_defaults", "switches"}
+                    servers_section = {
+                        key: value for key, value in raw_config.items() if key not in reserved
+                    }
                 if isinstance(servers_section, dict):
-                    CONFIG.update(servers_section)
+                    CONFIG.update(
+                        {
+                            server_id: _merge_connection_defaults(server_defaults, server)
+                            for server_id, server in servers_section.items()
+                        }
+                    )
+                    for server in CONFIG.values():
+                        if isinstance(server, dict) and server.get("vendor"):
+                            server["vendor"] = normalize_vendor(server["vendor"])
                 else:
                     logger.warning("Invalid format in %s: expected a mapping for servers", config_file)
                 switches_section = raw_config.get("switches", {})
                 if isinstance(switches_section, dict):
-                    SWITCHES.update(switches_section)
+                    SWITCHES.update(
+                        {
+                            switch_id: _merge_connection_defaults(switch_defaults, switch)
+                            for switch_id, switch in switches_section.items()
+                        }
+                    )
 
     # Load SECRETS if empty
     if not SECRETS:
@@ -154,6 +316,43 @@ def _load_config():
                     ISOS.update(raw_isos)
                 else:
                     logger.warning("Invalid format in %s: expected a mapping for isos", isos_file)
+
+
+def normalize_vendor(value: Any) -> str:
+    """Return the canonical vendor name used by handlers and console transports."""
+    normalized = str(value or "").strip().lower()
+    aliases = {
+        "hp": "hpe",
+        "hewlett packard enterprise": "hpe",
+        "idrac": "dell",
+        "ilo": "hpe",
+        "super micro": "supermicro",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def get_server_credentials(server_id: str) -> Optional[Dict[str, Any]]:
+    """Resolve credentials without exposing them in a tool result.
+
+    A host may reference ``credential_profile`` in its non-secret configuration.
+    Profiles live below ``profiles`` in the secrets file; a per-host secrets entry
+    takes precedence and can override individual profile fields.
+    """
+    _load_config()
+    server = CONFIG.get(server_id)
+    if not isinstance(server, dict):
+        return None
+    resolved: Dict[str, Any] = {}
+    profile_name = server.get("credential_profile")
+    profiles = SECRETS.get("profiles", {})
+    if profile_name and isinstance(profiles, dict):
+        profile = profiles.get(str(profile_name))
+        if isinstance(profile, dict):
+            resolved.update(profile)
+    direct = SECRETS.get(server_id)
+    if isinstance(direct, dict):
+        resolved.update(direct)
+    return resolved or None
 
 
 def _flatten_dict(data, prefix: str = "") -> Dict[str, str]:

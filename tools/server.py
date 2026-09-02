@@ -6,10 +6,10 @@ High-level server management tools - power, firmware, system info, hardware inve
 import asyncio
 from typing import Dict, List, Optional
 
+import config as cfg
 from config import mcp, CONFIG, _normalize_boot_target
 from helpers import _redfish_call, _get_handler, _ensure_boot_once_single
 from cache import RESPONSE_CACHE
-from config import TTL_FIRMWARE_INVENTORY, TTL_HARDWARE_OVERVIEW, TTL_SYSTEM_INFO
 
 
 @mcp.tool(description="Read current power state (On/Off) for servers, in parallel.")
@@ -102,7 +102,7 @@ async def get_firmware_inventory(server_ids: List[str], name_filter: Optional[Li
                 if result.get("status") == "success":
                     members = result.get("data", {}).get("Members", [])
                     full_inventory = [{"name": m.get("Name", ""), "version": m.get("Version", "")} for m in members]
-                    RESPONSE_CACHE.set(cache_key, full_inventory, TTL_FIRMWARE_INVENTORY)
+                    RESPONSE_CACHE.set(cache_key, full_inventory, cfg.TTL_FIRMWARE_INVENTORY)
                     inventory = (
                         full_inventory
                         if not name_filter
@@ -133,7 +133,7 @@ async def get_firmware_inventory(server_ids: List[str], name_filter: Optional[Li
                 fetch_results = await asyncio.gather(*fetch_tasks)
 
                 full_inventory = [res for res in fetch_results if res is not None]
-                RESPONSE_CACHE.set(cache_key, full_inventory, TTL_FIRMWARE_INVENTORY)
+                RESPONSE_CACHE.set(cache_key, full_inventory, cfg.TTL_FIRMWARE_INVENTORY)
                 inventory = (
                     full_inventory
                     if not name_filter
@@ -191,7 +191,7 @@ async def get_system_info(server_ids: List[str]) -> List[Dict]:
             if not info:
                 return {"server_id": server_id, "status": "error", "message": "Failed to get system info"}
             out = {"server_id": server_id, "status": "success", "info": info}
-            RESPONSE_CACHE.set(cache_key, out, TTL_SYSTEM_INFO)
+            RESPONSE_CACHE.set(cache_key, out, cfg.TTL_SYSTEM_INFO)
             return out
         except Exception as e:
             return {"server_id": server_id, "status": "error", "message": str(e)}
@@ -504,7 +504,7 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
                 "storage": {"drives": drives, "volumes": volumes},
             }
             result = {"server_id": server_id, "status": "success", "inventory": inventory}
-            RESPONSE_CACHE.set(cache_key, result, TTL_HARDWARE_OVERVIEW)
+            RESPONSE_CACHE.set(cache_key, result, cfg.TTL_HARDWARE_OVERVIEW)
             return result
         except Exception as e:
             return {"server_id": server_id, "status": "error", "message": str(e)}

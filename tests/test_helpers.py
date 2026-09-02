@@ -18,9 +18,11 @@ from conftest import (
     SUPERMICRO_ROOT,
 )
 from helpers import (
+    _bmc_url_authority,
     _get_vendor_from_api,
     _get_handler,
     _redfish_call,
+    _response_header,
     _find_virtual_cd_path,
     _get_vm_path_and_state,
     _eject_virtual_media,
@@ -29,31 +31,61 @@ from helpers import (
 )
 
 
+class TestBmcUrlAuthority:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "https://10.0.0.1",
+            "root@10.0.0.1",
+            "10.0.0.1:443",
+            "10.0.0.1/redfish/v1",
+            "10.0.0.1?target=other",
+            "10.0.0.1#fragment",
+            "[2001:db8::1]",
+            "fe80::1%eth0",
+            "999.0.0.1",
+            "2130706433",
+            "0x7f000001",
+            "0177.0.0.1",
+            " bmc.example.test",
+            "bmc.example.test\n",
+        ],
+    )
+    def test_rejects_non_host_authorities(self, value):
+        with pytest.raises(ValueError, match="bmc_ip"):
+            _bmc_url_authority(value)
+
+    def test_accepts_hostname_ipv4_and_bracketless_ipv6(self):
+        assert _bmc_url_authority("bmc-1.example.test") == "bmc-1.example.test"
+        assert _bmc_url_authority("192.0.2.10") == "192.0.2.10"
+        assert _bmc_url_authority("2001:db8::10") == "[2001:db8::10]"
+
+
 class TestGetVendorFromApi:
     async def test_dell_detected(self, mock_redfish_client):
         mock_redfish_client({"/redfish/v1": make_mock_response(200, DELL_R750_ROOT)})
-        vendor = await _get_vendor_from_api("10.0.0.1")
+        vendor = await _get_vendor_from_api("10.0.0.1", 443)
         assert vendor == "dell"
 
     async def test_hpe_detected(self, mock_redfish_client):
         mock_redfish_client({"/redfish/v1": make_mock_response(200, HPE_DL380_ROOT)})
-        vendor = await _get_vendor_from_api("10.0.0.100")
+        vendor = await _get_vendor_from_api("10.0.0.100", 443)
         assert vendor == "hpe"
 
     async def test_supermicro_detected(self, mock_redfish_client):
         mock_redfish_client({"/redfish/v1": make_mock_response(200, SUPERMICRO_ROOT)})
-        vendor = await _get_vendor_from_api("10.0.0.500")
+        vendor = await _get_vendor_from_api("10.0.0.50", 443)
         assert vendor == "supermicro"
 
     async def test_unknown_vendor_raises(self, mock_redfish_client):
         mock_redfish_client({"/redfish/v1": make_mock_response(200, {"Oem": {"UnknownVendor": {}}})})
         with pytest.raises(ConnectionError, match="Could not auto-detect"):
-            await _get_vendor_from_api("10.0.0.99")
+            await _get_vendor_from_api("10.0.0.99", 443)
 
     async def test_http_error_raises(self, mock_redfish_client):
         mock_redfish_client({"/redfish/v1": make_mock_response(500, {"error": "fail"})})
         with pytest.raises(ConnectionError, match="Could not auto-detect"):
-            await _get_vendor_from_api("10.0.0.99")
+            await _get_vendor_from_api("10.0.0.99", 443)
 
 
 class TestGetHandler:
@@ -90,7 +122,11 @@ class TestGetHandler:
     async def test_vendor_auto_detected(self, mock_redfish_client):
         import config
 
-        config.CONFIG["host99"] = {"bmc_ip": "10.0.0.99"}
+        config.CONFIG["host99"] = {
+            "bmc_ip": "10.0.0.99",
+            "redfish": {"port": 443},
+            "verify_ssl": False,
+        }
         config.SECRETS["host99"] = {"username": "root", "password": "pass"}
         mock_redfish_client({"/redfish/v1": make_mock_response(200, DELL_R750_ROOT)})
         await _get_handler("host99")
@@ -104,27 +140,157 @@ class TestGetHandler:
         import config
 
         config.CONFIG["host99"] = {"bmc_ip": "10.0.0.99", "vendor": "cisco"}
-        config.SECRETS["host99"] = {}
+        config.CONFIG["host99"]["redfish"] = {"port": 443}
+        config.CONFIG["host99"]["verify_ssl"] = False
+        config.SECRETS["host99"] = {"username": "operator", "password": "placeholder"}
         with pytest.raises(ValueError, match="Unsupported vendor"):
             await _get_handler("host99")
 
-    async def test_default_credentials_when_no_secrets(self, mock_redfish_client):
+    async def test_missing_credentials_fail_closed(self, mock_redfish_client):
         import config
-        from handlers import Dell
 
-        config.CONFIG["host99"] = {"bmc_ip": "10.0.0.99", "vendor": "dell"}
+        config.CONFIG["host99"] = {
+            "bmc_ip": "10.0.0.99",
+            "redfish": {"port": 443},
+            "verify_ssl": False,
+            "vendor": "dell",
+        }
         mock_redfish_client({"/redfish/v1": make_mock_response(200, DELL_R750_ROOT)})
-        handler = await _get_handler("host99")
-        assert isinstance(handler, Dell)
-        assert handler.auth == ("root", "calvin")
+        with pytest.raises(ValueError, match="Missing BMC username or password"):
+            await _get_handler("host99")
+
+    async def test_credential_profile_is_used(self, mock_redfish_client):
+        import config
+
+        config.CONFIG["profiled"] = {
+            "bmc_ip": "10.0.0.55",
+            "redfish": {"port": 8443},
+            "verify_ssl": False,
+            "vendor": "idrac",
+            "credential_profile": "dell-special",
+        }
+        config.SECRETS["profiles"] = {"dell-special": {"username": "profile-user", "password": "profile-pass"}}
+        mock_redfish_client({})
+
+        handler = await _get_handler("profiled")
+
+        assert handler.auth == ("profile-user", "profile-pass")
+        assert config.CONFIG["profiled"]["vendor"] == "dell"
 
 
 class TestRedfishCall:
-    async def test_successful_get_json(self, setup_dell_config, mock_redfish_client):
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "https://attacker.example/redfish/v1",
+            "//attacker.example/redfish/v1",
+        ],
+    )
+    async def test_rejects_absolute_and_network_paths_before_connecting(self, setup_dell_config, monkeypatch, path):
+        get_client = AsyncMock(side_effect=AssertionError("HTTP client must not be selected"))
+        monkeypatch.setattr("helpers._get_http_client", get_client)
+
+        result = await _redfish_call("host1", "GET", path)
+
+        assert result["status"] == "error"
+        assert "origin-relative" in result["message"]
+        get_client.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/redfish/v1/../Managers/1",
+            "/redfish/v1/./Systems/1",
+            "/redfish/v1/%2e%2E/Managers/1",
+            "/redfish/v1/%252e%252e/Managers/1",
+        ],
+    )
+    async def test_rejects_dot_segment_paths_before_connecting(self, setup_dell_config, monkeypatch, path):
+        get_client = AsyncMock(side_effect=AssertionError("HTTP must not be attempted"))
+        monkeypatch.setattr("helpers._get_http_client", get_client)
+
+        result = await _redfish_call("host1", "GET", path)
+
+        assert result["status"] == "error"
+        assert "dot-segments" in result["message"]
+        get_client.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "bmc_ip",
+        [
+            "https://10.0.0.1",
+            "root@10.0.0.1",
+            "10.0.0.1:443",
+            "10.0.0.1/redfish/v1",
+            "//other.example.test",
+        ],
+    )
+    async def test_rejects_ambiguous_configured_bmc_target_before_connecting(
+        self, setup_dell_config, monkeypatch, bmc_ip
+    ):
+        import config
+
+        config.CONFIG["host1"]["bmc_ip"] = bmc_ip
+        get_client = AsyncMock(side_effect=AssertionError("HTTP must not be attempted"))
+        monkeypatch.setattr("helpers._get_http_client", get_client)
+
+        result = await _redfish_call("host1", "GET", "/redfish/v1")
+
+        assert result["status"] == "error"
+        assert "bmc_ip" in result["message"]
+        get_client.assert_not_awaited()
+
+    async def test_bracketless_ipv6_is_safely_bracketed_in_url(self, setup_dell_config, monkeypatch):
+        import config
+
+        config.CONFIG["host1"]["bmc_ip"] = "2001:db8::10"
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.request = AsyncMock(return_value=make_mock_response(200, DELL_R750_SYSTEM))
+        monkeypatch.setattr("helpers._get_http_client", lambda: mock_client)
+
+        result = await _redfish_call("host1", "GET", "/redfish/v1")
+
+        assert result["status"] == "success"
+        assert mock_client.request.await_args.args[1] == "https://[2001:db8::10]:443/redfish/v1"
+
+    async def test_missing_redfish_port_fails_before_connecting(
+        self, setup_dell_config, monkeypatch
+    ):
+        import config
+
+        config.CONFIG["host1"].pop("redfish")
+        get_client = AsyncMock(side_effect=AssertionError("HTTP must not be attempted"))
+        monkeypatch.setattr("helpers._get_http_client", get_client)
+
+        result = await _redfish_call("host1", "GET", "/redfish/v1")
+
+        assert result["status"] == "error"
+        assert "redfish" in result["message"]
+        get_client.assert_not_awaited()
+
+    async def test_accepts_relative_path_and_normalizes_leading_slash(self, setup_dell_config, mock_redfish_client):
         mock_redfish_client({"/redfish/v1/Systems/System.Embedded.1": make_mock_response(200, DELL_R750_SYSTEM)})
+
+        result = await _redfish_call("host1", "GET", "redfish/v1/Systems/System.Embedded.1")
+
+        assert result["status"] == "success"
+
+    async def test_successful_get_json(self, setup_dell_config, mock_redfish_client):
+        mock_redfish_client(
+            {
+                "/redfish/v1/Systems/System.Embedded.1": make_mock_response(
+                    200,
+                    DELL_R750_SYSTEM,
+                    headers={"Location": "/redfish/v1/example"},
+                )
+            }
+        )
         result = await _redfish_call("host1", "GET", "/redfish/v1/Systems/System.Embedded.1")
         assert result["status"] == "success"
+        assert result["status_code"] == 200
         assert result["data"]["Manufacturer"] == "Dell Inc."
+        assert result["headers"]["location"] == "/redfish/v1/example"
+        assert _response_header(result, "LOCATION") == "/redfish/v1/example"
 
     async def test_successful_post_empty_content(self, setup_dell_config, mock_redfish_client):
         mock_redfish_client({"/Actions/ComputerSystem.Reset": make_mock_response(204, content=b"")})
@@ -135,6 +301,9 @@ class TestRedfishCall:
             {"ResetType": "GracefulRestart"},
         )
         assert result["status"] == "success"
+        assert result["remote_request_sent"] is True
+        assert result["retry_safe"] is False
+        assert result["outcome_unknown"] is False
         assert "Operation successful" in result["data"]
 
     async def test_non_json_response(self, setup_dell_config, mock_redfish_client):
@@ -157,16 +326,64 @@ class TestRedfishCall:
         mock_client.request = AsyncMock(side_effect=_mock_request)
         monkeypatch.setattr("helpers._http_client", mock_client)
         monkeypatch.setattr("helpers._get_http_client", lambda: mock_client)
-        monkeypatch.setattr("helpers.BACKOFF_FACTOR", 0)
+        monkeypatch.setattr("config.BACKOFF_FACTOR", 0)
 
         result = await _redfish_call("host1", "GET", "/redfish/v1/Systems/System.Embedded.1")
         assert result["status"] == "success"
         assert call_count == 2
 
+    async def test_mutating_5xx_is_not_retried(self, setup_dell_config, monkeypatch):
+        request = AsyncMock(
+            side_effect=[
+                make_mock_response(500, {"error": "possibly applied"}),
+                make_mock_response(204, content=b""),
+            ]
+        )
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.request = request
+        monkeypatch.setattr("helpers._get_http_client", lambda: mock_client)
+        monkeypatch.setattr("config.BACKOFF_FACTOR", 0)
+
+        result = await _redfish_call(
+            "host1",
+            "POST",
+            "/redfish/v1/Systems/System.Embedded.1/Actions/ComputerSystem.Reset",
+            {"ResetType": "GracefulRestart"},
+        )
+
+        assert result["status"] == "error"
+        assert result["status_code"] == 500
+        assert result["remote_request_sent"] is True
+        assert result["retry_safe"] is False
+        assert result["outcome_unknown"] is True
+        assert request.await_count == 1
+
+    async def test_mutating_transport_error_is_not_retried(self, setup_dell_config, monkeypatch):
+        request = AsyncMock(side_effect=httpx.ConnectError("response outcome is unknown"))
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.request = request
+        monkeypatch.setattr("helpers._get_http_client", lambda: mock_client)
+        monkeypatch.setattr("config.BACKOFF_FACTOR", 0)
+
+        result = await _redfish_call(
+            "host1",
+            "PATCH",
+            "/redfish/v1/Systems/System.Embedded.1",
+            {"Boot": {"BootSourceOverrideEnabled": "Once"}},
+        )
+
+        assert result["status"] == "error"
+        assert result["remote_request_sent"] is None
+        assert result["retry_safe"] is False
+        assert result["outcome_unknown"] is True
+        assert request.await_count == 1
+
     async def test_4xx_no_retry(self, setup_dell_config, mock_redfish_client):
         mock_redfish_client({"/redfish/v1/Systems/System.Embedded.1": make_mock_response(404, {"error": "Not Found"})})
         result = await _redfish_call("host1", "GET", "/redfish/v1/Systems/System.Embedded.1")
         assert result["status"] == "error"
+        assert result["status_code"] == 404
+        assert result["data"] == {"error": "Not Found"}
 
     async def test_connection_error_retry(self, setup_dell_config, monkeypatch):
         call_count = 0
@@ -182,11 +399,68 @@ class TestRedfishCall:
         mock_client.request = AsyncMock(side_effect=_mock_request)
         monkeypatch.setattr("helpers._http_client", mock_client)
         monkeypatch.setattr("helpers._get_http_client", lambda: mock_client)
-        monkeypatch.setattr("helpers.BACKOFF_FACTOR", 0)
+        monkeypatch.setattr("config.BACKOFF_FACTOR", 0)
 
         result = await _redfish_call("host1", "GET", "/redfish/v1/Systems/System.Embedded.1")
         assert result["status"] == "success"
         assert call_count == 2
+
+    async def test_uses_runtime_config_values(self, setup_dell_config, monkeypatch):
+        import config
+
+        calls = []
+
+        async def _mock_request(method, url, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return make_mock_response(500, {"error": "retry"})
+            return make_mock_response(200, DELL_R750_SYSTEM)
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.request = AsyncMock(side_effect=_mock_request)
+        monkeypatch.setattr("helpers._get_http_client", lambda: mock_client)
+        config._load_config()
+        monkeypatch.setattr(config, "DEFAULT_TIMEOUT", 17)
+        monkeypatch.setattr(config, "MAX_RETRIES", 2)
+        monkeypatch.setattr(config, "BACKOFF_FACTOR", 0)
+
+        result = await _redfish_call("host1", "GET", "/redfish/v1/Systems/System.Embedded.1")
+
+        assert result["status"] == "success"
+        assert len(calls) == 2
+        assert all(call["timeout"] == 17 for call in calls)
+
+    async def test_verify_ssl_selects_separate_verified_client(self, setup_dell_config, monkeypatch):
+        import config
+
+        config.CONFIG["host1"]["verify_ssl"] = True
+        selected = []
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.request = AsyncMock(return_value=make_mock_response(200, DELL_R750_SYSTEM))
+
+        def select_client(verify=False):
+            selected.append(verify)
+            return mock_client
+
+        monkeypatch.setattr("helpers._get_http_client", select_client)
+
+        result = await _redfish_call("host1", "GET", "/redfish/v1/Systems/System.Embedded.1")
+
+        assert result["status"] == "success"
+        assert selected == [True]
+
+    async def test_invalid_verify_ssl_value_fails_closed(self, setup_dell_config, monkeypatch):
+        import config
+
+        config.CONFIG["host1"]["verify_ssl"] = "false"
+        get_client = AsyncMock(side_effect=AssertionError("HTTP must not be attempted"))
+        monkeypatch.setattr("helpers._get_http_client", get_client)
+
+        result = await _redfish_call("host1", "GET", "/redfish/v1/Systems/System.Embedded.1")
+
+        assert result["status"] == "error"
+        assert "verify_ssl must be a boolean" in result["message"]
+        get_client.assert_not_awaited()
 
     async def test_handler_exception_returns_error(self, mock_redfish_client):
         mock_redfish_client({})
@@ -310,6 +584,7 @@ class TestEnsureBootOnceSingle:
         result = await _ensure_boot_once_single("host1", "Pxe")
         assert result["status"] == "success"
         assert "already set" in result["message"]
+        assert result["power_state"] == DELL_R750_SYSTEM["PowerState"]
 
     async def test_needs_change(self, setup_dell_config, mock_redfish_client):
         mock_redfish_client({"/Systems/System.Embedded.1": make_mock_response(200, DELL_R750_SYSTEM)})

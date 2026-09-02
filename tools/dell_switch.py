@@ -10,6 +10,7 @@ import paramiko
 
 import config as cfg
 from config import SECRETS, SWITCHES, _load_config, mcp
+from helpers import _configured_port
 
 
 def _get_command_output(channel, command: str, prompt: str, timeout: Optional[int] = None) -> str:
@@ -62,12 +63,15 @@ def _dell_switch_ssh_commands_sync(switch_id: str, commands: List[str]) -> Dict:
     host = switch_cfg.get("hostname") or switch_cfg.get("bmc_ip") or switch_cfg.get("address")
     username = creds.get("username")
     password = creds.get("password")
-    port = int(switch_cfg.get("port", 22))
 
     if not host:
         return {"switch_id": switch_id, "status": "error", "message": "No address configured"}
     if not username or not password:
         return {"switch_id": switch_id, "status": "error", "message": "Missing credentials in secrets"}
+    try:
+        port = _configured_port(switch_cfg.get("port"), "switch.port")
+    except ValueError as exc:
+        return {"switch_id": switch_id, "status": "error", "message": str(exc)}
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())

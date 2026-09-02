@@ -17,9 +17,28 @@ class TestGetAllHosts:
         assert "host1" in result
         assert "host100" in result
 
-    def test_empty_config(self):
+    def test_empty_config(self, monkeypatch):
+        import config
+
+        monkeypatch.setattr(config, "_load_config", lambda: None)
         result = get_all_hosts()
         assert result == {}
+
+    def test_defensively_loads_config(self, monkeypatch):
+        import config
+
+        calls = []
+
+        def load():
+            calls.append(True)
+            config.CONFIG["loaded-host"] = {"bmc_ip": "192.0.2.10"}
+
+        monkeypatch.setattr(config, "_load_config", load)
+
+        result = get_all_hosts()
+
+        assert calls == [True]
+        assert result["loaded-host"]["bmc_ip"] == "192.0.2.10"
 
 
 class TestGetHostDetails:

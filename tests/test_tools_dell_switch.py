@@ -16,7 +16,7 @@ class TestDellSwitchSshCommandsSync:
     def test_rejects_non_show_command_before_connecting(self, monkeypatch):
         import config
 
-        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1"}
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
         config.SECRETS["test-switch"] = {"username": "admin", "password": "pass"}
         mock_client = MagicMock(spec=paramiko.SSHClient)
         monkeypatch.setattr("tools.dell_switch.paramiko.SSHClient", lambda: mock_client)
@@ -31,7 +31,7 @@ class TestDellSwitchSshCommandsSync:
     def test_rejects_multiline_command(self):
         import config
 
-        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1"}
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
         config.SECRETS["test-switch"] = {"username": "admin", "password": "pass"}
 
         from tools.dell_switch import _dell_switch_ssh_commands_sync
@@ -55,7 +55,7 @@ class TestDellSwitchSshCommandsSync:
     def test_missing_credentials(self):
         import config
 
-        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1"}
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
         config.SECRETS["test-switch"] = {}
 
         from tools.dell_switch import _dell_switch_ssh_commands_sync
@@ -64,10 +64,23 @@ class TestDellSwitchSshCommandsSync:
         assert result["status"] == "error"
         assert "Missing credentials" in result["message"]
 
-    def test_auth_failure(self, monkeypatch):
+    def test_requires_explicit_port(self):
         import config
 
         config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1"}
+        config.SECRETS["test-switch"] = {"username": "example-user", "password": "not-real"}
+
+        from tools.dell_switch import _dell_switch_ssh_commands_sync
+
+        result = _dell_switch_ssh_commands_sync("test-switch", ["show version"])
+
+        assert result["status"] == "error"
+        assert "switch.port" in result["message"]
+
+    def test_auth_failure(self, monkeypatch):
+        import config
+
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
         config.SECRETS["test-switch"] = {"username": "admin", "password": "wrong"}
         mock_client = MagicMock(spec=paramiko.SSHClient)
         mock_client.connect.side_effect = paramiko.AuthenticationException("Auth failed")
@@ -83,7 +96,7 @@ class TestDellSwitchSshCommandsSync:
     def test_successful_command(self, monkeypatch):
         import config
 
-        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1"}
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
         config.SECRETS["test-switch"] = {"username": "admin", "password": "pass"}
         mock_client = MagicMock(spec=paramiko.SSHClient)
         mock_channel = MagicMock()

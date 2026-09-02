@@ -1,12 +1,26 @@
 # Redfish Server Configuration
 # This file defines the bare-metal servers managed by the Redfish MCP server
 #
-# Each server entry should include:
+# Each server entry should include or inherit:
 # - id: Unique identifier for the server
 # - bmc_ip: IP bmc_ip or hostname of the BMC
+# - redfish.port: HTTPS port for Redfish
+# - serial_console.transport and serial_console.port: SOL/VSP connection
+# - verify_ssl: Redfish TLS verification policy
 # - vendor: Vendor hint for adapter selection (Dell, HPE, etc.)
 # - tags: Custom tags for filtering and organization
-# - verify_ssl: Whether to verify SSL certificates (default: false for self-signed certs)
+# - verify_ssl: Whether to verify SSL certificates
+
+server_defaults:
+  redfish:
+    port: 443
+  serial_console:
+    transport: auto
+    port: 22
+  verify_ssl: false
+
+switch_defaults:
+  port: 22
 
 servers:
   # Dell PowerEdge servers with iDRAC
@@ -21,6 +35,20 @@ servers:
       - database
     verify_ssl: false
     description: "Accounting Database - Dell PowerEdge server with iDRAC"
+    service_tag: ABC123  # optional: stop on BMC/host identity mismatch
+    expected_host_macs:  # optional: OS NIC identity guard for collection
+      - aa:bb:cc:dd:ee:01
+    bmc_mac: 00:11:22:33:44:55  # kept separate from host NIC MACs
+    credential_profile: dell-lab
+    serial_console:
+      transport: auto  # Dell -> SOL; HPE -> VSP
+      port: 22
+      connect_timeout: 10
+    vnc:
+      port: 5901
+      timeout: 30
+      key_delay: 0.01  # increase for a slow virtual keyboard
+      # vnc_password belongs in redfish_secrets.yaml, never here
 
   hpe-web-02:
     id: hpe-web-02
@@ -32,6 +60,10 @@ servers:
       - rack-15
     verify_ssl: false
     description: "Web server - Application server"
+    credential_profile: hpe-lab
+    serial_console:
+      transport: auto
+      port: 22
 
   # Development servers
   hpe-dev-01:
@@ -44,20 +76,14 @@ servers:
       - rack-20
     verify_ssl: false
     description: "Development server for testing"
-
-  # Short example with minimal fields
-  host-minimal:
-    bmc_ip: 192.168.2.111
-    tags:
-      - development
-      - testing
-      - rack-20
+    credential_profile: hpe-lab
 
 # Switches (separate section, uses SSH not Redfish)
-# Only 'hostname' is required. 'model', 'vendor', 'tags', 'port' are all optional.
+# The SSH port must be provided by switch_defaults or by each switch entry.
 switches:
   lab1-switch:
     hostname: 192.168.1.200
+    # port: 22 is inherited from switch_defaults
     vendor: Juniper
     model: "Juniper Networks QFX5120-32C-AFI"
     tags:
@@ -65,6 +91,7 @@ switches:
       - lab1
   lab1-dell-switch:
     hostname: 192.168.1.201
+    # port: 22 is inherited from switch_defaults
     vendor: Dell
     model: "S5232F-ON"
     tags:

@@ -1,5 +1,7 @@
 """Tests for config.py - _normalize_boot_target, _flatten_dict, _load_config."""
 
+from pathlib import Path
+
 import yaml
 import pytest
 
@@ -92,6 +94,43 @@ class TestFlattenDict:
 
 
 class TestLoadConfig:
+    def test_example_files_define_all_connection_values(self, monkeypatch, tmp_path):
+        import config
+
+        repository = Path(__file__).resolve().parents[1]
+        monkeypatch.setattr(
+            config,
+            "CONFIG_FILE",
+            str(repository / "redfish_servers.example.yaml"),
+        )
+        monkeypatch.setattr(
+            config,
+            "SECRETS_FILE",
+            str(repository / "redfish_secrets.example.yaml"),
+        )
+        monkeypatch.setattr(config, "ISOS_FILE", str(tmp_path / "missing-isos.yaml"))
+        monkeypatch.setattr(config, "SETTINGS_FILE", str(tmp_path / "missing-settings.yaml"))
+
+        _load_config()
+
+        assert config.CONFIG
+        assert config.SWITCHES
+        for server_id, server in config.CONFIG.items():
+            assert server["redfish"]["port"] == 443
+            assert server["serial_console"]["port"] == 22
+            assert server["serial_console"]["transport"] == "auto"
+            assert isinstance(server["verify_ssl"], bool)
+            credentials = config.get_server_credentials(server_id)
+            assert credentials["username"]
+            assert credentials["password"]
+        for switch_id, switch in config.SWITCHES.items():
+            assert switch["port"] == 22
+            assert config.SECRETS[switch_id]["username"]
+            assert config.SECRETS[switch_id]["password"]
+        assert config.CONFIG["dell-db-02"]["vnc"]["port"] == 5901
+        assert config.CONFIG["dell-db-02"]["vnc"]["key_delay"] == 0.01
+        assert config.get_server_credentials("dell-db-02")["vnc_password"]
+
     def test_loads_all_files(self, tmp_path, monkeypatch):
         servers_file = tmp_path / "servers.yaml"
         secrets_file = tmp_path / "secrets.yaml"
@@ -101,6 +140,12 @@ class TestLoadConfig:
         servers_file.write_text(
             yaml.dump(
                 {
+                    "server_defaults": {
+                        "redfish": {"port": 443},
+                        "serial_console": {"port": 22, "transport": "auto"},
+                        "verify_ssl": False,
+                    },
+                    "switch_defaults": {"port": 22},
                     "servers": {"srv1": {"bmc_ip": "10.0.0.1", "vendor": "dell"}},
                     "switches": {"sw1": {"hostname": "10.0.0.2"}},
                 }
@@ -121,8 +166,15 @@ class TestLoadConfig:
 
         assert "srv1" in config.CONFIG
         assert config.CONFIG["srv1"]["bmc_ip"] == "10.0.0.1"
+        assert config.CONFIG["srv1"]["redfish"]["port"] == 443
+        assert config.CONFIG["srv1"]["serial_console"] == {
+            "port": 22,
+            "transport": "auto",
+        }
+        assert config.CONFIG["srv1"]["verify_ssl"] is False
         assert config.SECRETS["srv1"]["username"] == "root"
         assert "sw1" in config.SWITCHES
+        assert config.SWITCHES["sw1"]["port"] == 22
         assert config.DEFAULT_TIMEOUT == 120
         assert config.MAX_RETRIES == 5
 
@@ -191,6 +243,14 @@ class TestLoadConfig:
                     "cache_ttl_disk_cache": 43200,
                     "ssh_timeout": 30,
                     "ssh_command_timeout": 120,
+                    "vnc_capture_timeout": 45,
+                    "sol_connect_timeout": 12,
+                    "console_command_timeout": 180,
+                    "console_batch_concurrency": 8,
+                    "network_collection_concurrency": 7,
+                    "hardware_inventory_timeout": 240,
+                    "hardware_inventory_max_bytes": 1048576,
+                    "operation_ttl": 7200,
                 }
             )
         )
@@ -209,3 +269,61 @@ class TestLoadConfig:
         assert config.BACKOFF_FACTOR == 1.5
         assert config.SSH_TIMEOUT == 30
         assert config.SSH_COMMAND_TIMEOUT == 120
+        assert config.VNC_CAPTURE_TIMEOUT == 45
+        assert config.SOL_CONNECT_TIMEOUT == 12
+        assert config.CONSOLE_COMMAND_TIMEOUT == 180
+        assert config.CONSOLE_BATCH_CONCURRENCY == 8
+        assert config.NETWORK_COLLECTION_CONCURRENCY == 7
+        assert config.HARDWARE_INVENTORY_TIMEOUT == 240
+        assert config.HARDWARE_INVENTORY_MAX_BYTES == 1048576
+        assert config.OPERATION_TTL == 7200
+
+    def test_invalid_numeric_settings_keep_safe_defaults(self, tmp_path, monkeypatch):
+        import config
+
+        settings_file = tmp_path / "settings.yaml"
+        settings_file.write_text(
+            yaml.safe_dump(
+                {
+                    "console_batch_concurrency": 13,
+                    "network_collection_concurrency": 13,
+                    "batch_concurrency": 13,
+                    "console_output_limit": 1_048_577,
+                    "hardware_inventory_timeout": 999999,
+                    "hardware_inventory_max_bytes": 268_435_457,
+                }
+            )
+        )
+        monkeypatch.setattr(config, "CONFIG_FILE", str(tmp_path / "none.yaml"))
+        monkeypatch.setattr(config, "SECRETS_FILE", str(tmp_path / "none2.yaml"))
+        monkeypatch.setattr(config, "ISOS_FILE", str(tmp_path / "none3.yaml"))
+        monkeypatch.setattr(config, "SETTINGS_FILE", str(settings_file))
+        monkeypatch.setattr(config, "CONSOLE_BATCH_CONCURRENCY", 6)
+        monkeypatch.setattr(config, "NETWORK_COLLECTION_CONCURRENCY", 6)
+        monkeypatch.setattr(config, "BATCH_CONCURRENCY", 6)
+        monkeypatch.setattr(config, "CONSOLE_OUTPUT_LIMIT", 65536)
+        monkeypatch.setattr(config, "HARDWARE_INVENTORY_TIMEOUT", 300)
+        monkeypatch.setattr(config, "HARDWARE_INVENTORY_MAX_BYTES", 52_428_800)
+
+        _load_config()
+
+        assert config.CONSOLE_BATCH_CONCURRENCY == 6
+        assert config.NETWORK_COLLECTION_CONCURRENCY == 6
+        assert config.BATCH_CONCURRENCY == 6
+        assert config.CONSOLE_OUTPUT_LIMIT == 65536
+        assert config.HARDWARE_INVENTORY_TIMEOUT == 300
+        assert config.HARDWARE_INVENTORY_MAX_BYTES == 52_428_800
+
+    def test_vendor_alias_is_normalized_while_loading(self, tmp_path, monkeypatch):
+        import config
+
+        servers_file = tmp_path / "servers.yaml"
+        servers_file.write_text(yaml.safe_dump({"servers": {"hpe1": {"bmc_ip": "10.0.0.1", "vendor": "HP"}}}))
+        monkeypatch.setattr(config, "CONFIG_FILE", str(servers_file))
+        monkeypatch.setattr(config, "SECRETS_FILE", str(tmp_path / "none.yaml"))
+        monkeypatch.setattr(config, "ISOS_FILE", str(tmp_path / "none2.yaml"))
+        monkeypatch.setattr(config, "SETTINGS_FILE", str(tmp_path / "none3.yaml"))
+
+        _load_config()
+
+        assert config.CONFIG["hpe1"]["vendor"] == "hpe"

@@ -19,3 +19,32 @@ cache_ttl_disk_cache: 86400          # 24 hours
 # SSH settings for Junos and Dell switch commands (seconds)
 ssh_timeout: 15
 ssh_command_timeout: 60
+
+# Timeout for a one-shot BMC VNC framebuffer capture (seconds)
+vnc_capture_timeout: 30
+
+# Directory containing readable, per-host YAML network inventory snapshots.
+# Relative paths are resolved from the MCP server's working directory.
+network_inventory_dir: network_inventory
+
+# Shared upper bound for ordinary multi-host operations.
+batch_concurrency: 6
+
+# Dell hardware XML export. Files and manifests stay below this root.
+hardware_inventory_dir: data/hardware_inventory
+hardware_inventory_timeout: 300
+hardware_inventory_poll_interval: 2
+hardware_inventory_max_bytes: 52428800
+
+# Text serial-console (Dell SOL / HPE VSP) and fleet execution guards.
+sol_connect_timeout: 10
+console_command_timeout: 60
+console_batch_concurrency: 6
+console_output_limit: 65536
+console_session_ttl: 300
+
+# Retain completed background fleet-operation results for this many seconds.
+operation_ttl: 3600
+
+# Short-command Linux network collection over a BMC serial console.
+network_collection_concurrency: 6

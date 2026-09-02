@@ -29,7 +29,7 @@ class TestJunosSshCommandsSync:
     def test_missing_credentials(self):
         import config
 
-        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1"}
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
         config.SECRETS["test-switch"] = {}
 
         from tools.junos import _junos_ssh_commands_sync
@@ -38,10 +38,23 @@ class TestJunosSshCommandsSync:
         assert result["status"] == "error"
         assert "Missing credentials" in result["message"]
 
-    def test_auth_failure(self, monkeypatch):
+    def test_requires_explicit_port(self):
         import config
 
         config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1"}
+        config.SECRETS["test-switch"] = {"username": "example-user", "password": "not-real"}
+
+        from tools.junos import _junos_ssh_commands_sync
+
+        result = _junos_ssh_commands_sync("test-switch", ["show version"])
+
+        assert result["status"] == "error"
+        assert "switch.port" in result["message"]
+
+    def test_auth_failure(self, monkeypatch):
+        import config
+
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
         config.SECRETS["test-switch"] = {"username": "admin", "password": "wrong"}
 
         mock_client = MagicMock(spec=paramiko.SSHClient)
@@ -61,7 +74,7 @@ class TestJunosSshCommandsSync:
     def test_generic_exception(self, monkeypatch):
         import config
 
-        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1"}
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
         config.SECRETS["test-switch"] = {"username": "admin", "password": "pass"}
 
         mock_client = MagicMock(spec=paramiko.SSHClient)
@@ -81,7 +94,7 @@ class TestJunosSshCommandsSync:
     def test_successful_command(self, monkeypatch):
         import config
 
-        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1"}
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
         config.SECRETS["test-switch"] = {"username": "admin", "password": "pass"}
 
         mock_client = MagicMock(spec=paramiko.SSHClient)
@@ -113,7 +126,7 @@ class TestJunosSshCommandsSync:
     def test_prompt_timeout(self, monkeypatch):
         import config
 
-        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1"}
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
         config.SECRETS["test-switch"] = {"username": "admin", "password": "pass"}
 
         mock_client = MagicMock(spec=paramiko.SSHClient)
@@ -142,7 +155,7 @@ class TestJunosRunCommand:
     async def test_success(self, monkeypatch):
         import config
 
-        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1"}
+        config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
         config.SECRETS["test-switch"] = {"username": "admin", "password": "pass"}
 
         mock_result = {

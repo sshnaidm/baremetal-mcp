@@ -1,18 +1,19 @@
 """Tests for handlers.py - vendor-specific handler classes."""
 
 import base64
+import pytest
 
 from handlers import BaseVendorHandler, Dell, HPE, Supermicro, VENDOR_MAP
 
 
 class TestDellHandler:
-    def test_default_credentials(self):
-        handler = Dell(None, None)
-        assert handler.auth == ("root", "calvin")
+    def test_missing_credentials_are_rejected(self):
+        with pytest.raises(ValueError, match="username and password"):
+            Dell(None, None)
 
     def test_custom_credentials(self):
-        handler = Dell("admin", "secret")
-        assert handler.auth == ("admin", "secret")
+        handler = Dell("example-user", "example-password")
+        assert handler.auth == ("example-user", "example-password")
 
     def test_paths(self):
         assert Dell.SYSTEM_PATH == "/redfish/v1/Systems/System.Embedded.1"
@@ -21,28 +22,26 @@ class TestDellHandler:
         assert Dell.HW_INVENTORY_PATH != ""
 
     def test_get_request_args(self):
-        handler = Dell("root", "calvin")
+        handler = Dell("example-dell-user", "example-dell-password")
         args = handler.get_request_args()
         assert "headers" in args
         assert "auth" in args
-        assert args["auth"] == ("root", "calvin")
+        assert args["auth"] == ("example-dell-user", "example-dell-password")
         assert args["headers"]["Content-Type"] == "application/json"
 
 
 class TestHPEHandler:
-    def test_default_credentials(self):
-        handler = HPE(None, None)
-        assert handler.auth is None
-        expected = base64.b64encode(b"Administrator:password").decode("utf-8")
-        assert handler.headers["Authorization"] == f"Basic {expected}"
+    def test_missing_credentials_are_rejected(self):
+        with pytest.raises(ValueError, match="username and password"):
+            HPE(None, None)
 
     def test_custom_credentials(self):
-        handler = HPE("admin", "secret123")
-        expected = base64.b64encode(b"admin:secret123").decode("utf-8")
+        handler = HPE("example-user", "example-password")
+        expected = base64.b64encode(b"example-user:example-password").decode("utf-8")
         assert handler.headers["Authorization"] == f"Basic {expected}"
 
     def test_auth_is_none(self):
-        handler = HPE("admin", "pass")
+        handler = HPE("example-user", "example-password")
         assert handler.auth is None
 
     def test_paths(self):
@@ -52,7 +51,7 @@ class TestHPEHandler:
         assert HPE.HW_INVENTORY_PATH == ""
 
     def test_get_request_args_no_auth_key(self):
-        handler = HPE("admin", "pass")
+        handler = HPE("example-user", "example-password")
         args = handler.get_request_args()
         assert "headers" in args
         assert "auth" not in args
@@ -60,13 +59,13 @@ class TestHPEHandler:
 
 
 class TestSupermicroHandler:
-    def test_default_credentials(self):
-        handler = Supermicro(None, None)
-        assert handler.auth == ("ADMIN", "ADMIN")
+    def test_missing_credentials_are_rejected(self):
+        with pytest.raises(ValueError, match="username and password"):
+            Supermicro(None, None)
 
     def test_custom_credentials(self):
-        handler = Supermicro("user", "pw")
-        assert handler.auth == ("user", "pw")
+        handler = Supermicro("example-user", "example-password")
+        assert handler.auth == ("example-user", "example-password")
 
     def test_paths(self):
         assert Supermicro.SYSTEM_PATH == "/redfish/v1/Systems/1"
@@ -75,9 +74,9 @@ class TestSupermicroHandler:
         assert Supermicro.HW_INVENTORY_PATH == ""
 
     def test_get_request_args(self):
-        handler = Supermicro("ADMIN", "ADMIN")
+        handler = Supermicro("example-supermicro-user", "example-supermicro-password")
         args = handler.get_request_args()
-        assert args["auth"] == ("ADMIN", "ADMIN")
+        assert args["auth"] == ("example-supermicro-user", "example-supermicro-password")
 
 
 class TestVendorMap:
