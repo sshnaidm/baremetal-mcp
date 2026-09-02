@@ -5,7 +5,6 @@ from fastmcp import Client
 import config
 import tools  # noqa: F401 - import-time tool registration is the contract under test
 
-
 EXPECTED_TOOLS = {
     "boot_from_iso",
     "capture_console_screen",

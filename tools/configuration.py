@@ -10,7 +10,6 @@ import config as cfg
 from config import mcp
 from helpers import _configured_port
 
-
 _CAPABILITIES = {"redfish", "serial", "vnc", "network_inventory", "hardware_xml"}
 
 

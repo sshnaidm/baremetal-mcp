@@ -21,7 +21,6 @@ from config import mcp, ISOS, _load_config, _flatten_dict, logger
 from helpers import _redfish_call, _get_handler, _redfish_url_authority, _response_header
 from cache import RESPONSE_CACHE
 
-
 _COLLECTION_LOCKS: Dict[str, asyncio.Lock] = {}
 _FAILED_TASK_STATES = {
     "cancelled",

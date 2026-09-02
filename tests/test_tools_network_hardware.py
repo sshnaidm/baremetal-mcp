@@ -7,9 +7,7 @@ from conftest import DELL_R750_SYSTEM, make_mock_response
 from tools.network_hardware import get_network_hardware
 
 
-async def test_collects_interfaces_adapters_ports_and_functions(
-    setup_dell_config, mock_redfish_client
-):
+async def test_collects_interfaces_adapters_ports_and_functions(setup_dell_config, mock_redfish_client):
     system = dict(DELL_R750_SYSTEM)
     routes = {
         "/Systems/System.Embedded.1/EthernetInterfaces/NIC1": make_mock_response(
@@ -26,17 +24,9 @@ async def test_collects_interfaces_adapters_ports_and_functions(
         ),
         "/Systems/System.Embedded.1/EthernetInterfaces": make_mock_response(
             200,
-            {
-                "Members": [
-                    {
-                        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/EthernetInterfaces/NIC1"
-                    }
-                ]
-            },
+            {"Members": [{"@odata.id": "/redfish/v1/Systems/System.Embedded.1/EthernetInterfaces/NIC1"}]},
         ),
-        "/Systems/System.Embedded.1/NetworkInterfaces": make_mock_response(
-            200, {"Members": []}
-        ),
+        "/Systems/System.Embedded.1/NetworkInterfaces": make_mock_response(200, {"Members": []}),
         "/Chassis/1/NetworkAdapters/A1/NetworkPorts/P1": make_mock_response(
             200,
             {
@@ -50,11 +40,7 @@ async def test_collects_interfaces_adapters_ports_and_functions(
         ),
         "/Chassis/1/NetworkAdapters/A1/NetworkPorts": make_mock_response(
             200,
-            {
-                "Members": [
-                    {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/A1/NetworkPorts/P1"}
-                ]
-            },
+            {"Members": [{"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/A1/NetworkPorts/P1"}]},
         ),
         "/Chassis/1/NetworkAdapters/A1/NetworkDeviceFunctions/F1": make_mock_response(
             200,
@@ -68,21 +54,13 @@ async def test_collects_interfaces_adapters_ports_and_functions(
                     "PermanentMACAddress": "AA:BB:CC:DD:EE:01",
                 },
                 "Links": {
-                    "PhysicalPortAssignment": {
-                        "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/A1/NetworkPorts/P1"
-                    }
+                    "PhysicalPortAssignment": {"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/A1/NetworkPorts/P1"}
                 },
             },
         ),
         "/Chassis/1/NetworkAdapters/A1/NetworkDeviceFunctions": make_mock_response(
             200,
-            {
-                "Members": [
-                    {
-                        "@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/A1/NetworkDeviceFunctions/F1"
-                    }
-                ]
-            },
+            {"Members": [{"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/A1/NetworkDeviceFunctions/F1"}]},
         ),
         "/Chassis/1/NetworkAdapters/A1": make_mock_response(
             200,
@@ -103,12 +81,8 @@ async def test_collects_interfaces_adapters_ports_and_functions(
             200,
             {"Members": [{"@odata.id": "/redfish/v1/Chassis/1/NetworkAdapters/A1"}]},
         ),
-        "/redfish/v1/Chassis/1": make_mock_response(
-            200, {"@odata.id": "/redfish/v1/Chassis/1", "Id": "1"}
-        ),
-        "/redfish/v1/Chassis": make_mock_response(
-            200, {"Members": [{"@odata.id": "/redfish/v1/Chassis/1"}]}
-        ),
+        "/redfish/v1/Chassis/1": make_mock_response(200, {"@odata.id": "/redfish/v1/Chassis/1", "Id": "1"}),
+        "/redfish/v1/Chassis": make_mock_response(200, {"Members": [{"@odata.id": "/redfish/v1/Chassis/1"}]}),
         "/Systems/System.Embedded.1": make_mock_response(200, system),
     }
     mock_redfish_client(routes)
@@ -125,9 +99,7 @@ async def test_collects_interfaces_adapters_ports_and_functions(
     assert host["network_device_functions"][0]["physical_port_path"].endswith("/P1")
 
 
-async def test_identity_mismatch_stops_hardware_walk(
-    setup_dell_config, mock_redfish_client
-):
+async def test_identity_mismatch_stops_hardware_walk(setup_dell_config, mock_redfish_client):
     config.CONFIG["host1"]["serial_number"] = "EXPECTED"
     observed = dict(DELL_R750_SYSTEM, SerialNumber="OTHER")
     mock_redfish_client({"/Systems/System.Embedded.1": make_mock_response(200, observed)})

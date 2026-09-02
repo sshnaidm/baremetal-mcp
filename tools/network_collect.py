@@ -16,7 +16,6 @@ from helpers import _get_handler, _redfish_call
 from tools.network_inventory import save_network_inventory
 from tools.serial_console import _run_serial_commands
 
-
 _MAX_BATCH_SIZE = 64
 _MAX_CONCURRENCY = 12
 _MAX_INTERFACES = 48
@@ -81,8 +80,7 @@ def _normalize_ids(server_ids: List[str]) -> tuple[Optional[List[str]], Optional
 def _parse_link(output: str) -> Dict[str, Dict[str, Any]]:
     interfaces: Dict[str, Dict[str, Any]] = {}
     pattern = re.compile(
-        r"^\d+:\s+([^:@\s]+)(?:@[^:]+)?:\s+<([^>]*)>.*?\bstate\s+(\S+).*?"
-        r"\blink/\S+\s+([0-9A-Fa-f:]{17})\b"
+        r"^\d+:\s+([^:@\s]+)(?:@[^:]+)?:\s+<([^>]*)>.*?\bstate\s+(\S+).*?" r"\blink/\S+\s+([0-9A-Fa-f:]{17})\b"
     )
     for raw_line in output.splitlines():
         match = pattern.search(raw_line.strip())
@@ -145,7 +143,7 @@ def _split_vendor_model(description: str) -> tuple[Optional[str], Optional[str]]
     )
     for vendor in vendors:
         if value.startswith(vendor):
-            return vendor, value[len(vendor):].strip() or None
+            return vendor, value[len(vendor) :].strip() or None
     parts = value.split(None, 1)
     return (parts[0], parts[1] if len(parts) > 1 else None) if parts else (None, None)
 
@@ -233,7 +231,7 @@ def _parse_system(output: str) -> Dict[str, Optional[str]]:
     for line in output.splitlines():
         for prefix, key in (("HOSTNAME\t", "hostname"), ("SERIAL\t", "serial_number"), ("KERNEL\t", "kernel")):
             if line.startswith(prefix):
-                value = line[len(prefix):].strip()
+                value = line[len(prefix) :].strip()
                 result[key] = value or None
     return result
 

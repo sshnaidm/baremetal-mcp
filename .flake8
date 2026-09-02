@@ -4,7 +4,8 @@ max-complexity = 10
 
 # Ignore specific errors (comments moved above for clarity)
 # C901: is too complex
-extend-ignore = C901
+# E203: whitespace before ':' (Black-compatible slice formatting)
+extend-ignore = C901,E203
 
 # Exclude directories
 exclude =

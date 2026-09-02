@@ -21,7 +21,6 @@ import yaml
 import config
 from config import mcp
 
-
 SCHEMA_VERSION = 1
 MAX_SEARCH_RESULTS = 1000
 _INVENTORY_LOCKS: Dict[str, asyncio.Lock] = {}
@@ -94,7 +93,7 @@ def _normalize_mac(value: str) -> str:
     compact = re.sub(r"[^0-9A-Fa-f]", "", value)
     if len(compact) != 12:
         raise ValueError(f"Invalid MAC address: {value}")
-    return ":".join(compact[index:index + 2] for index in range(0, 12, 2)).lower()
+    return ":".join(compact[index : index + 2] for index in range(0, 12, 2)).lower()
 
 
 def _normalize_address(value: Any) -> Dict[str, Any]:
@@ -529,7 +528,7 @@ async def search_network_inventory(
             errors.append({"path": str(path), "message": str(exc)})
 
     total_count = len(matches)
-    page = matches[offset:offset + limit]
+    page = matches[offset : offset + limit]
     return {
         "status": "partial" if errors else "success",
         "count": len(page),

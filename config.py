@@ -170,34 +170,38 @@ def _load_config():
                 raw_settings = yaml.safe_load(f) or {}
                 if isinstance(raw_settings, dict):
                     SETTINGS.update(raw_settings)
-                    DEFAULT_TIMEOUT = _bounded_setting(
-                        "default_timeout", DEFAULT_TIMEOUT, minimum=1, maximum=3600
-                    )
-                    MAX_RETRIES = _bounded_setting(
-                        "max_retries", MAX_RETRIES, integer=True, minimum=1, maximum=10
-                    )
-                    BACKOFF_FACTOR = _bounded_setting(
-                        "backoff_factor", BACKOFF_FACTOR, minimum=0, maximum=60
-                    )
+                    DEFAULT_TIMEOUT = _bounded_setting("default_timeout", DEFAULT_TIMEOUT, minimum=1, maximum=3600)
+                    MAX_RETRIES = _bounded_setting("max_retries", MAX_RETRIES, integer=True, minimum=1, maximum=10)
+                    BACKOFF_FACTOR = _bounded_setting("backoff_factor", BACKOFF_FACTOR, minimum=0, maximum=60)
                     TTL_FIRMWARE_INVENTORY = _bounded_setting(
-                        "cache_ttl_firmware_inventory", TTL_FIRMWARE_INVENTORY,
-                        integer=True, minimum=0, maximum=31_536_000,
+                        "cache_ttl_firmware_inventory",
+                        TTL_FIRMWARE_INVENTORY,
+                        integer=True,
+                        minimum=0,
+                        maximum=31_536_000,
                     )
                     TTL_HARDWARE_OVERVIEW = _bounded_setting(
-                        "cache_ttl_hardware_overview", TTL_HARDWARE_OVERVIEW,
-                        integer=True, minimum=0, maximum=31_536_000,
+                        "cache_ttl_hardware_overview",
+                        TTL_HARDWARE_OVERVIEW,
+                        integer=True,
+                        minimum=0,
+                        maximum=31_536_000,
                     )
                     TTL_SYSTEM_INFO = _bounded_setting(
-                        "cache_ttl_system_info", TTL_SYSTEM_INFO,
-                        integer=True, minimum=0, maximum=31_536_000,
+                        "cache_ttl_system_info",
+                        TTL_SYSTEM_INFO,
+                        integer=True,
+                        minimum=0,
+                        maximum=31_536_000,
                     )
                     TTL_DISK_CACHE = _bounded_setting(
-                        "cache_ttl_disk_cache", TTL_DISK_CACHE,
-                        integer=True, minimum=0, maximum=31_536_000,
+                        "cache_ttl_disk_cache",
+                        TTL_DISK_CACHE,
+                        integer=True,
+                        minimum=0,
+                        maximum=31_536_000,
                     )
-                    SSH_TIMEOUT = _bounded_setting(
-                        "ssh_timeout", SSH_TIMEOUT, minimum=1, maximum=600
-                    )
+                    SSH_TIMEOUT = _bounded_setting("ssh_timeout", SSH_TIMEOUT, minimum=1, maximum=600)
                     SSH_COMMAND_TIMEOUT = _bounded_setting(
                         "ssh_command_timeout", SSH_COMMAND_TIMEOUT, minimum=1, maximum=3600
                     )
@@ -211,43 +215,68 @@ def _load_config():
                         "console_command_timeout", CONSOLE_COMMAND_TIMEOUT, minimum=1, maximum=3600
                     )
                     CONSOLE_BATCH_CONCURRENCY = _bounded_setting(
-                        "console_batch_concurrency", CONSOLE_BATCH_CONCURRENCY,
-                        integer=True, minimum=1, maximum=12,
+                        "console_batch_concurrency",
+                        CONSOLE_BATCH_CONCURRENCY,
+                        integer=True,
+                        minimum=1,
+                        maximum=12,
                     )
                     CONSOLE_OUTPUT_LIMIT = _bounded_setting(
-                        "console_output_limit", CONSOLE_OUTPUT_LIMIT,
-                        integer=True, minimum=1024, maximum=1_048_576,
+                        "console_output_limit",
+                        CONSOLE_OUTPUT_LIMIT,
+                        integer=True,
+                        minimum=1024,
+                        maximum=1_048_576,
                     )
                     CONSOLE_SESSION_TTL = _bounded_setting(
-                        "console_session_ttl", CONSOLE_SESSION_TTL,
-                        integer=True, minimum=10, maximum=86_400,
+                        "console_session_ttl",
+                        CONSOLE_SESSION_TTL,
+                        integer=True,
+                        minimum=10,
+                        maximum=86_400,
                     )
                     OPERATION_TTL = _bounded_setting(
-                        "operation_ttl", OPERATION_TTL,
-                        integer=True, minimum=60, maximum=86_400,
+                        "operation_ttl",
+                        OPERATION_TTL,
+                        integer=True,
+                        minimum=60,
+                        maximum=86_400,
                     )
                     NETWORK_COLLECTION_CONCURRENCY = _bounded_setting(
-                        "network_collection_concurrency", NETWORK_COLLECTION_CONCURRENCY,
-                        integer=True, minimum=1, maximum=12,
+                        "network_collection_concurrency",
+                        NETWORK_COLLECTION_CONCURRENCY,
+                        integer=True,
+                        minimum=1,
+                        maximum=12,
                     )
                     BATCH_CONCURRENCY = _bounded_setting(
-                        "batch_concurrency", BATCH_CONCURRENCY,
-                        integer=True, minimum=1, maximum=12,
+                        "batch_concurrency",
+                        BATCH_CONCURRENCY,
+                        integer=True,
+                        minimum=1,
+                        maximum=12,
                     )
                     HARDWARE_INVENTORY_DIR = os.getenv("HARDWARE_INVENTORY_DIR") or SETTINGS.get(
                         "hardware_inventory_dir", HARDWARE_INVENTORY_DIR
                     )
                     HARDWARE_INVENTORY_TIMEOUT = _bounded_setting(
-                        "hardware_inventory_timeout", HARDWARE_INVENTORY_TIMEOUT,
-                        minimum=1, maximum=3600,
+                        "hardware_inventory_timeout",
+                        HARDWARE_INVENTORY_TIMEOUT,
+                        minimum=1,
+                        maximum=3600,
                     )
                     HARDWARE_INVENTORY_POLL_INTERVAL = _bounded_setting(
-                        "hardware_inventory_poll_interval", HARDWARE_INVENTORY_POLL_INTERVAL,
-                        minimum=0.1, maximum=30,
+                        "hardware_inventory_poll_interval",
+                        HARDWARE_INVENTORY_POLL_INTERVAL,
+                        minimum=0.1,
+                        maximum=30,
                     )
                     HARDWARE_INVENTORY_MAX_BYTES = _bounded_setting(
-                        "hardware_inventory_max_bytes", HARDWARE_INVENTORY_MAX_BYTES,
-                        integer=True, minimum=1024, maximum=268_435_456,
+                        "hardware_inventory_max_bytes",
+                        HARDWARE_INVENTORY_MAX_BYTES,
+                        integer=True,
+                        minimum=1024,
+                        maximum=268_435_456,
                     )
 
     # Load CONFIG if empty
@@ -270,9 +299,7 @@ def _load_config():
                     servers_section = raw_config.get("servers")
                 else:
                     reserved = {"labs", "server_defaults", "switch_defaults", "switches"}
-                    servers_section = {
-                        key: value for key, value in raw_config.items() if key not in reserved
-                    }
+                    servers_section = {key: value for key, value in raw_config.items() if key not in reserved}
                 if isinstance(servers_section, dict):
                     CONFIG.update(
                         {

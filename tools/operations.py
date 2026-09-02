@@ -16,7 +16,6 @@ from tools.dell import export_hardware_inventory_xml
 from tools.network_collect import collect_network_inventory
 from tools.serial_console import run_console_command_batch
 
-
 _MAX_OPERATIONS = 128
 _OPERATIONS: Dict[str, Dict[str, Any]] = {}
 _OPERATION_LOCK = asyncio.Lock()
@@ -37,9 +36,7 @@ def _operation_ttl() -> int:
 
 def _public_operation(record: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        key: value
-        for key, value in record.items()
-        if key not in {"task", "private_arguments", "expires_at_monotonic"}
+        key: value for key, value in record.items() if key not in {"task", "private_arguments", "expires_at_monotonic"}
     }
 
 
@@ -48,8 +45,7 @@ def _prune_operations() -> None:
     expired = [
         operation_id
         for operation_id, record in _OPERATIONS.items()
-        if record.get("expires_at_monotonic", now + 1) <= now
-        and record.get("state") in {"completed", "failed"}
+        if record.get("expires_at_monotonic", now + 1) <= now and record.get("state") in {"completed", "failed"}
     ]
     for operation_id in expired:
         _OPERATIONS.pop(operation_id, None)
@@ -105,11 +101,7 @@ def _aggregate_remote_outcome(result: Any) -> Dict[str, Any]:
         }
 
     nested = result.get("results")
-    entries = (
-        [entry for entry in nested if isinstance(entry, dict)]
-        if isinstance(nested, list)
-        else []
-    )
+    entries = [entry for entry in nested if isinstance(entry, dict)] if isinstance(nested, list) else []
     if not entries:
         entries = [result]
 
@@ -137,9 +129,7 @@ async def _run_operation(
     try:
         result = await runner()
         record["result"] = result
-        record["outcome_status"] = (
-            result.get("status", "unknown") if isinstance(result, dict) else "unknown"
-        )
+        record["outcome_status"] = result.get("status", "unknown") if isinstance(result, dict) else "unknown"
         record.update(_aggregate_remote_outcome(result))
         record["state"] = "completed"
     except asyncio.CancelledError:
@@ -219,8 +209,10 @@ async def start_console_command_batch(
             concurrency=concurrency,
             dry_run=True,
         )
-    if not isinstance(confirm_command, str) or not isinstance(command, str) or not secrets.compare_digest(
-        confirm_command, command
+    if (
+        not isinstance(confirm_command, str)
+        or not isinstance(command, str)
+        or not secrets.compare_digest(confirm_command, command)
     ):
         return {
             "status": "error",
@@ -371,9 +363,7 @@ async def retry_console_operation_failures(
                 "status": "error",
                 "state": "unknown",
                 "remote_state": "unknown",
-                "message": (
-                    "Operation not found or expired; remote state is unknown and automatic retry is refused"
-                ),
+                "message": ("Operation not found or expired; remote state is unknown and automatic retry is refused"),
             }
         if record.get("operation_type") != "console_command_batch":
             return {"status": "error", "message": "Operation is not a console command batch"}
