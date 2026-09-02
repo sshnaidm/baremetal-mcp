@@ -187,14 +187,10 @@ class TestBootFromIso:
         assert result[0]["status"] == "success"
         assert "ForceRestart" not in result[0]["message"]
 
-    async def test_verify_false_still_powers_on_an_off_host(
-        self, setup_dell_config, mock_redfish_client
-    ):
+    async def test_verify_false_still_powers_on_an_off_host(self, setup_dell_config, mock_redfish_client):
         import config
 
-        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = (
-            "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
-        )
+        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
         inserted_cd = dict(DELL_R750_VM_CD, Inserted=True, Image=IMAGE_URL)
         powered_off = dict(DELL_R750_SYSTEM, PowerState="Off")
         reset_payloads = []
@@ -241,14 +237,10 @@ class TestBootFromIso:
         result = await boot_from_iso(["nonexistent"], IMAGE_URL, verify=False)
         assert result[0]["status"] == "error"
 
-    async def test_verifies_exact_media_and_boot_override_before_reset(
-        self, setup_dell_config, mock_redfish_client
-    ):
+    async def test_verifies_exact_media_and_boot_override_before_reset(self, setup_dell_config, mock_redfish_client):
         import config
 
-        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = (
-            "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
-        )
+        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
         state = {"media_inserted": False, "boot_patched": False, "reset_seen": False}
 
         def media(method, _url, **_kwargs):
@@ -271,9 +263,7 @@ class TestBootFromIso:
             data = dict(DELL_R750_SYSTEM)
             data["Boot"] = dict(DELL_R750_SYSTEM["Boot"])
             if state["boot_patched"]:
-                data["Boot"].update(
-                    {"BootSourceOverrideEnabled": "Once", "BootSourceOverrideTarget": "Cd"}
-                )
+                data["Boot"].update({"BootSourceOverrideEnabled": "Once", "BootSourceOverrideTarget": "Cd"})
             return make_mock_response(200, data)
 
         def reset(method, _url, **kwargs):
@@ -303,22 +293,16 @@ class TestBootFromIso:
         assert "reset_type" not in result[0]["verification"]
         assert state["reset_seen"] is True
 
-    async def test_late_insert_failure_preserves_accepted_eject_state(
-        self, setup_dell_config, mock_redfish_client
-    ):
+    async def test_late_insert_failure_preserves_accepted_eject_state(self, setup_dell_config, mock_redfish_client):
         import config
 
-        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = (
-            "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
-        )
+        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
         inserted_cd = dict(DELL_R750_VM_CD, Inserted=True, Image="http://old.iso")
         mock_redfish_client(
             {
                 "/VirtualMedia/CD": make_mock_response(200, inserted_cd),
                 "/Actions/VirtualMedia.EjectMedia": make_mock_response(204, content=b""),
-                "/Actions/VirtualMedia.InsertMedia": make_mock_response(
-                    400, {"error": "rejected"}
-                ),
+                "/Actions/VirtualMedia.InsertMedia": make_mock_response(400, {"error": "rejected"}),
             }
         )
 
@@ -342,9 +326,7 @@ class TestBootFromIso:
     ):
         import config
 
-        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = (
-            "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
-        )
+        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
 
         async def fail_verification(*_args, **_kwargs):
             raise TimeoutError("media state unavailable")
@@ -367,14 +349,10 @@ class TestBootFromIso:
         assert result["outcome_unknown"] is True
         assert result["retry_safe"] is False
 
-    async def test_ambiguous_insert_is_preserved(
-        self, setup_dell_config, mock_redfish_client, monkeypatch
-    ):
+    async def test_ambiguous_insert_is_preserved(self, setup_dell_config, mock_redfish_client, monkeypatch):
         import config
 
-        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = (
-            "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
-        )
+        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
 
         async def ambiguous_insert(*_args, **_kwargs):
             return {
@@ -398,14 +376,10 @@ class TestBootFromIso:
         assert result["outcome_unknown"] is True
         assert result["retry_safe"] is False
 
-    async def test_ambiguous_boot_override_is_preserved(
-        self, setup_dell_config, mock_redfish_client
-    ):
+    async def test_ambiguous_boot_override_is_preserved(self, setup_dell_config, mock_redfish_client):
         import config
 
-        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = (
-            "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
-        )
+        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
         inserted_cd = dict(DELL_R750_VM_CD, Inserted=True, Image=IMAGE_URL)
 
         def system(method, _url, **_kwargs):
@@ -430,14 +404,10 @@ class TestBootFromIso:
         assert result["outcome_unknown"] is True
         assert result["retry_safe"] is False
 
-    async def test_ambiguous_reset_preserves_accepted_boot_override(
-        self, setup_dell_config, mock_redfish_client
-    ):
+    async def test_ambiguous_reset_preserves_accepted_boot_override(self, setup_dell_config, mock_redfish_client):
         import config
 
-        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = (
-            "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
-        )
+        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
         inserted_cd = dict(DELL_R750_VM_CD, Inserted=True, Image=IMAGE_URL)
 
         def system(method, _url, **_kwargs):
@@ -447,9 +417,7 @@ class TestBootFromIso:
 
         mock_redfish_client(
             {
-                "/Actions/ComputerSystem.Reset": make_mock_response(
-                    503, {"error": "unknown"}
-                ),
+                "/Actions/ComputerSystem.Reset": make_mock_response(503, {"error": "unknown"}),
                 "/VirtualMedia/CD": make_mock_response(200, inserted_cd),
                 "/Systems/System.Embedded.1": system,
             }

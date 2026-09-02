@@ -19,7 +19,6 @@ from helpers import (
     _ensure_boot_once_single,
 )
 
-
 _MAX_BATCH_SIZE = 64
 _MAX_CONCURRENCY = 12
 
@@ -77,12 +76,8 @@ def _mutation_summary(
     else:
         remote_request_sent = False
     accepted = [item["action"] for item in mutations if item.get("state") == "accepted"]
-    ambiguous = [
-        item["action"] for item in mutations if item.get("state") == "sent_unconfirmed"
-    ]
-    outcome_unknown = state_unconfirmed or any(
-        item.get("outcome_unknown") is True for item in mutations
-    )
+    ambiguous = [item["action"] for item in mutations if item.get("state") == "sent_unconfirmed"]
+    outcome_unknown = state_unconfirmed or any(item.get("outcome_unknown") is True for item in mutations)
     return {
         "mutations": mutations,
         "accepted_mutations": accepted,
@@ -193,9 +188,7 @@ async def _verify_boot_override(server_id: str, mode: Optional[str]) -> Dict:
 
 
 @mcp.tool(description="Declaratively ensure ISO/image is mounted as virtual media (idempotent), in parallel.")
-async def inject_media(
-    server_ids: List[str], image_url: str, concurrency: Optional[int] = None
-) -> List[Dict]:
+async def inject_media(server_ids: List[str], image_url: str, concurrency: Optional[int] = None) -> List[Dict]:
     """Ensure desired ISO is mounted.
 
     Behavior
@@ -389,9 +382,7 @@ async def boot_from_iso(
                     )
                     pending_mutation = None
                     if eject_result.get("status") != "success":
-                        return _boot_failure(
-                            server_id, phase, eject_result, actions, mutations
-                        )
+                        return _boot_failure(server_id, phase, eject_result, actions, mutations)
                     actions.append(f"Ejected media {current_image}")
 
                 phase = "media-insert"
@@ -410,9 +401,7 @@ async def boot_from_iso(
                 )
                 pending_mutation = None
                 if insert_result.get("status") != "success":
-                    return _boot_failure(
-                        server_id, phase, insert_result, actions, mutations
-                    )
+                    return _boot_failure(server_id, phase, insert_result, actions, mutations)
                 actions.append(f"Inserted media {image_url}")
 
             if verify:
@@ -435,10 +424,7 @@ async def boot_from_iso(
             ensure_result = await _ensure_boot_once_single(server_id, "Cd", mode=mode)
             pending_mutation = None
             if ensure_result.get("status") != "success":
-                if any(
-                    key in ensure_result
-                    for key in ("remote_request_sent", "outcome_unknown", "retry_safe")
-                ):
+                if any(key in ensure_result for key in ("remote_request_sent", "outcome_unknown", "retry_safe")):
                     mutations.append(
                         _mutation_record(
                             "set_boot_override",
@@ -448,12 +434,8 @@ async def boot_from_iso(
                             mode=mode,
                         )
                     )
-                return _boot_failure(
-                    server_id, phase, ensure_result, actions, mutations
-                )
-            boot_override_changed = "already set" not in str(
-                ensure_result.get("message") or ""
-            ).lower()
+                return _boot_failure(server_id, phase, ensure_result, actions, mutations)
+            boot_override_changed = "already set" not in str(ensure_result.get("message") or "").lower()
             if boot_override_changed:
                 mutations.append(
                     _mutation_record(
@@ -484,17 +466,13 @@ async def boot_from_iso(
                 phase = "reset-request"
                 handler = await _get_handler(server_id)
                 reset_path = f"{handler.SYSTEM_PATH}/Actions/ComputerSystem.Reset"
-                observed_power_state = (
-                    boot_state.get("power_state") if boot_state else ensure_result.get("power_state")
-                )
+                observed_power_state = boot_state.get("power_state") if boot_state else ensure_result.get("power_state")
                 actual_reset_type = "On" if observed_power_state == "Off" else reboot_type
                 pending_mutation = {
                     "action": "request_reset",
                     "reset_type": actual_reset_type,
                 }
-                reset_result = await _redfish_call(
-                    server_id, "POST", reset_path, {"ResetType": actual_reset_type}
-                )
+                reset_result = await _redfish_call(server_id, "POST", reset_path, {"ResetType": actual_reset_type})
                 mutations.append(
                     _mutation_record(
                         "request_reset",
@@ -505,9 +483,7 @@ async def boot_from_iso(
                 )
                 pending_mutation = None
                 if reset_result.get("status") != "success":
-                    return _boot_failure(
-                        server_id, phase, reset_result, actions, mutations
-                    )
+                    return _boot_failure(server_id, phase, reset_result, actions, mutations)
                 actions.append(f"Reset request accepted: {actual_reset_type}")
                 reset_request = {
                     "requested_type": actual_reset_type,
@@ -532,9 +508,7 @@ async def boot_from_iso(
                 details = dict(pending_mutation)
                 action = details.pop("action")
                 mutations.append(_ambiguous_mutation(action, phase, **details))
-            state_unconfirmed = phase in {"media-verification", "boot-verification"} and bool(
-                mutations
-            )
+            state_unconfirmed = phase in {"media-verification", "boot-verification"} and bool(mutations)
             return _boot_failure(
                 server_id,
                 phase,

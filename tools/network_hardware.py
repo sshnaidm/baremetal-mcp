@@ -11,7 +11,6 @@ import config as cfg
 from config import mcp
 from helpers import _get_handler, _redfish_call
 
-
 _MAX_BATCH_SIZE = 64
 _MAX_CONCURRENCY = 12
 _MAX_MEMBERS = 256
@@ -64,9 +63,7 @@ class _RedfishReader:
             return []
         paths = [member_path for member in members if (member_path := _odata_path(member))]
         if len(paths) > _MAX_MEMBERS:
-            self.errors.append(
-                {"path": path, "message": f"Collection exceeds {_MAX_MEMBERS} member safety limit"}
-            )
+            self.errors.append({"path": path, "message": f"Collection exceeds {_MAX_MEMBERS} member safety limit"})
             paths = paths[:_MAX_MEMBERS]
         values = await asyncio.gather(*(self.get(member_path, optional=True) for member_path in paths))
         return [value for value in values if value]
@@ -153,9 +150,7 @@ def _device_function(data: Dict[str, Any]) -> Dict[str, Any]:
         "device_enabled": data.get("DeviceEnabled"),
         "net_device_function_type": data.get("NetDevFuncType"),
         "mac_address": _normalize_mac(ethernet.get("MACAddress") or data.get("MACAddress")),
-        "permanent_mac_address": _normalize_mac(
-            ethernet.get("PermanentMACAddress") or data.get("PermanentMACAddress")
-        ),
+        "permanent_mac_address": _normalize_mac(ethernet.get("PermanentMACAddress") or data.get("PermanentMACAddress")),
         "boot_mode": ethernet.get("BootMode"),
         "physical_port_path": _odata_path(assignment),
         "status": data.get("Status"),
@@ -206,9 +201,7 @@ async def _collect_one(server_id: str) -> Dict[str, Any]:
             "uuid": system.get("UUID"),
         }
         if expected_serial and observed_serial:
-            identity["status"] = (
-                "verified" if expected_serial.casefold() == observed_serial.casefold() else "mismatch"
-            )
+            identity["status"] = "verified" if expected_serial.casefold() == observed_serial.casefold() else "mismatch"
         if identity["status"] == "mismatch":
             return {
                 "server_id": server_id,
@@ -234,16 +227,17 @@ async def _collect_one(server_id: str) -> Dict[str, Any]:
         )
         adapter_data = [adapter for group in adapter_groups for adapter in group]
         owners = [*adapter_data, *network_interfaces]
-        child_groups = await asyncio.gather(
-            *(
-                _linked_collection(reader, owner, "NetworkPorts", "NetworkPorts")
-                for owner in owners
-            ),
-            *(
-                _linked_collection(reader, owner, "NetworkDeviceFunctions", "NetworkDeviceFunctions")
-                for owner in owners
-            ),
-        ) if owners else []
+        child_groups = (
+            await asyncio.gather(
+                *(_linked_collection(reader, owner, "NetworkPorts", "NetworkPorts") for owner in owners),
+                *(
+                    _linked_collection(reader, owner, "NetworkDeviceFunctions", "NetworkDeviceFunctions")
+                    for owner in owners
+                ),
+            )
+            if owners
+            else []
+        )
         split = len(owners)
         port_groups = child_groups[:split]
         function_groups = child_groups[split:]
@@ -324,9 +318,7 @@ async def get_network_hardware(
     successful = sum(result.get("status") == "success" for result in results)
     failed = sum(result.get("status") == "error" for result in results)
     status = (
-        "success"
-        if successful == len(results)
-        else ("partial" if successful or failed < len(results) else "error")
+        "success" if successful == len(results) else ("partial" if successful or failed < len(results) else "error")
     )
     return {
         "status": status,

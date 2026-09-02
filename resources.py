@@ -7,7 +7,6 @@ from typing import List
 
 import config as cfg
 
-
 mcp = cfg.mcp
 
 

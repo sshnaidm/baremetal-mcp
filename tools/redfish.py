@@ -12,7 +12,6 @@ import config as cfg
 from config import mcp
 from helpers import _origin_relative_path, _redfish_call
 
-
 _READ_ONLY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _SUPPORTED_METHODS = _READ_ONLY_METHODS | _MUTATING_METHODS

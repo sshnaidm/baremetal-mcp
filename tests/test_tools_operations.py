@@ -136,9 +136,7 @@ async def test_console_background_aggregates_remote_outcome(
         return {"status": "error", "phase": "complete", "results": [host_result]}
 
     monkeypatch.setattr("tools.operations.run_console_command_batch", fake_batch)
-    started = await start_console_command_batch(
-        ["host1"], "true", dry_run=False, confirm_command="true"
-    )
+    started = await start_console_command_batch(["host1"], "true", dry_run=False, confirm_command="true")
     done = await _completed(started["operation_id"])
 
     assert done["remote_state"] == remote_state

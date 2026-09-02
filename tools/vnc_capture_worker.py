@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 import time
 
-
 _PAGER_KEYS = {
     "next_page": "space",
     "previous_page": "b",
@@ -33,9 +32,7 @@ def _command_line(command: str) -> str:
     quoted_command = _shell_quote(command)
     return (
         "if command -v less >/dev/null 2>&1; then "
-        "{ sh -c "
-        + quoted_command
-        + "; __bm_rc=$?; printf '\\n[baremetal-mcp exit=%s]\\n' \"$__bm_rc\"; } "
+        "{ sh -c " + quoted_command + "; __bm_rc=$?; printf '\\n[baremetal-mcp exit=%s]\\n' \"$__bm_rc\"; } "
         "</dev/null 2>&1 | LESSSECURE=1 less -R -M; "
         "else printf '\\n[baremetal-mcp error: less is required]\\n'; fi"
     )

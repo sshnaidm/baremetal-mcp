@@ -253,9 +253,7 @@ class TestRedfishCall:
         assert result["status"] == "success"
         assert mock_client.request.await_args.args[1] == "https://[2001:db8::10]:443/redfish/v1"
 
-    async def test_missing_redfish_port_fails_before_connecting(
-        self, setup_dell_config, monkeypatch
-    ):
+    async def test_missing_redfish_port_fails_before_connecting(self, setup_dell_config, monkeypatch):
         import config
 
         config.CONFIG["host1"].pop("redfish")

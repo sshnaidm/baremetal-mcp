@@ -22,7 +22,6 @@ import config as cfg
 from config import CONFIG, _load_config, mcp
 from helpers import _configured_port
 
-
 _WORKER_PATH = Path(__file__).with_name("vnc_capture_worker.py")
 _ACTIVE_PAGERS: Dict[str, Dict[str, Any]] = {}
 _CONSOLE_PREFLIGHTS: Dict[str, Dict[str, Any]] = {}

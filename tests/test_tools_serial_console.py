@@ -62,10 +62,7 @@ class ScriptedChannel:
             if rc is None:
                 response = f"\r\n__BM_BEGIN_{nonce}__\r\n{output}"
             else:
-                response = (
-                    f"\r\n__BM_BEGIN_{nonce}__\r\n{output}"
-                    f"\r\n__BM_END_{nonce}__ rc={rc}\r\nroot@fedora:~# "
-                )
+                response = f"\r\n__BM_BEGIN_{nonce}__\r\n{output}" f"\r\n__BM_END_{nonce}__ rc={rc}\r\nroot@fedora:~# "
             self.received.append(response.encode())
 
     def recv_ready(self):

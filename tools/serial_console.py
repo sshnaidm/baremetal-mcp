@@ -17,7 +17,6 @@ import config as cfg
 from config import mcp
 from helpers import _configured_port
 
-
 _DEFAULT_CONNECT_TIMEOUT = 10.0
 _DEFAULT_COMMAND_TIMEOUT = 60.0
 _DEFAULT_BATCH_CONCURRENCY = 4
@@ -88,7 +87,7 @@ class _BoundedCapture:
             self.head += value[:head_missing]
             value = value[head_missing:]
         if value and self.tail_limit:
-            self.tail = (self.tail + value)[-self.tail_limit:]
+            self.tail = (self.tail + value)[-self.tail_limit :]
 
     def result(self, found: bool) -> _ReadResult:
         return _ReadResult(
@@ -115,7 +114,7 @@ class _ChannelReader:
             index = buffer.find(token)
             if index >= 0:
                 capture.add(buffer[:index])
-                self.pending = buffer[index + len(token):]
+                self.pending = buffer[index + len(token) :]
                 return capture.result(found=True)
 
             # Keep only the suffix that might be the start of a split token.
@@ -150,11 +149,7 @@ class _ChannelReader:
                 chunk = self.channel.recv(_RECV_SIZE)
                 if not chunk:
                     break
-                capture.add(
-                    chunk.decode("utf-8", errors="replace")
-                    if isinstance(chunk, bytes)
-                    else str(chunk)
-                )
+                capture.add(chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else str(chunk))
             else:
                 time.sleep(_POLL_INTERVAL)
         return capture.result(found=False)
@@ -260,11 +255,7 @@ def _normalize_transport(server: Dict[str, Any]) -> Tuple[Optional[_TransportPro
     requested = str(serial.get("transport")).strip().lower()
     raw_vendor = server.get("vendor") or server.get("bmc_type") or ""
     normalize_vendor = getattr(cfg, "normalize_vendor", None)
-    vendor = (
-        normalize_vendor(raw_vendor)
-        if callable(normalize_vendor)
-        else str(raw_vendor).strip().lower()
-    )
+    vendor = normalize_vendor(raw_vendor) if callable(normalize_vendor) else str(raw_vendor).strip().lower()
 
     if requested in {"sol", "dell", "idrac", "idrac-ssh-sol"}:
         profile = _DELL_SOL
@@ -302,11 +293,7 @@ def _serial_settings(server_id: str) -> Tuple[Optional[Dict[str, Any]], Optional
         return None, _error_result(server_id, "No BMC address configured", phase="config", transport=profile.name)
 
     credential_resolver = getattr(cfg, "get_server_credentials", None)
-    credential = (
-        credential_resolver(server_id)
-        if callable(credential_resolver)
-        else cfg.SECRETS.get(server_id)
-    )
+    credential = credential_resolver(server_id) if callable(credential_resolver) else cfg.SECRETS.get(server_id)
     if not isinstance(credential, dict):
         credential = {}
     username = credential.get("username")
@@ -580,8 +567,7 @@ def _aggregate_session(
     successful = sum(item.get("status") == "success" for item in commands)
     sent = sum(item.get("command_sent") is True for item in commands)
     unconfirmed = any(
-        item.get("command_sent") is True and item.get("result_confirmed") is not True
-        for item in commands
+        item.get("command_sent") is True and item.get("result_confirmed") is not True for item in commands
     )
     if commands and successful == len(commands):
         status = "success"
@@ -711,7 +697,7 @@ def _run_serial_commands_sync(
                     _not_sent_commands(
                         server_id,
                         profile.name,
-                        commands[index + 1:],
+                        commands[index + 1 :],
                         "skipped",
                         message,
                         retry_safe=False,
@@ -736,7 +722,7 @@ def _run_serial_commands_sync(
         # If an exception follows a successful send, preserve that uncertainty
         # and do not classify the command as retry-safe.
         sent = any(item.get("command_sent") for item in results)
-        remaining = commands[len(results):]
+        remaining = commands[len(results) :]
         results.extend(
             _not_sent_commands(
                 server_id,
@@ -896,9 +882,7 @@ def _normalize_server_ids(server_ids: List[str]) -> Tuple[Optional[List[str]], O
 
 def _concurrency_value(concurrency: Optional[int]) -> Tuple[Optional[int], Optional[str]]:
     value = (
-        _configured_int("CONSOLE_BATCH_CONCURRENCY", _DEFAULT_BATCH_CONCURRENCY)
-        if concurrency is None
-        else concurrency
+        _configured_int("CONSOLE_BATCH_CONCURRENCY", _DEFAULT_BATCH_CONCURRENCY) if concurrency is None else concurrency
     )
     if isinstance(value, bool):
         return None, "Invalid console batch concurrency"
@@ -985,11 +969,7 @@ async def run_console_command_batch(
             results.append(result)
         successful = sum(result["status"] == "success" for result in results)
         status = "success" if successful == len(results) else "partial" if successful else "error"
-        failed = [
-            server_id
-            for server_id, result in zip(normalized, results)
-            if result["status"] != "success"
-        ]
+        failed = [server_id for server_id, result in zip(normalized, results) if result["status"] != "success"]
         return {
             "status": status,
             "phase": "dry-run",
@@ -1034,11 +1014,7 @@ async def run_console_command_batch(
         "unique_count": len(normalized),
         "duplicates_removed": duplicates_removed,
         "successful": successful,
-        "failed": [
-            server_id
-            for server_id, result in zip(normalized, results)
-            if result.get("status") != "success"
-        ],
+        "failed": [server_id for server_id, result in zip(normalized, results) if result.get("status") != "success"],
         "retryable": bool(failed_results) and len(retryable_hosts) == len(failed_results),
         "retryable_hosts": retryable_hosts,
         "results": results,
