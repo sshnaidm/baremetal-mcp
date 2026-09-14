@@ -16,7 +16,7 @@ async def test_validate_host_configuration_never_returns_secret_values():
                 "verify_ssl": False,
                 "vendor": "iDRAC",
                 "credential_profile": "dell-lab",
-                "vnc": {"port": 5901, "key_delay": 0.01},
+                "vnc_port": 5901,
             }
         }
     )
@@ -51,7 +51,7 @@ async def test_validate_host_configuration_reports_per_host_failures():
             "broken": {
                 "bmc_ip": "not a host",
                 "vendor": "unknown",
-                "vnc": {"port": 70000, "key_delay": 0.01},
+                "vnc_port": 70000,
                 "host_mac": "bad-mac",
             },
             "hpe1": {
@@ -71,7 +71,7 @@ async def test_validate_host_configuration_reports_per_host_failures():
     broken = result["results"][0]
     assert "bmc_ip is missing or invalid" in broken["errors"]
     assert any("unsupported vendor" in error for error in broken["errors"])
-    assert any("vnc.port" in error for error in broken["errors"])
+    assert any("vnc_port" in error for error in broken["errors"])
     assert any("invalid configured host MAC" in error for error in broken["errors"])
     assert result["results"][1]["vendor"] == "hpe"
 

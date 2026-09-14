@@ -1,4 +1,6 @@
-"""Tests for config.py - _normalize_boot_target, _flatten_dict, _load_config."""
+"""Tests for config.py - logging, _normalize_boot_target, _flatten_dict, _load_config."""
+
+import logging
 
 from pathlib import Path
 
@@ -6,6 +8,25 @@ import yaml
 import pytest
 
 from config import _normalize_boot_target, _flatten_dict, _load_config
+
+
+class TestRequestLogging:
+    def test_default_request_log_path(self):
+        import config
+
+        assert config.DEFAULT_REQUEST_LOG_PATH == "/tmp/baremetal-mcp-requests.log"
+
+    def test_file_error_falls_back_to_stderr(self, monkeypatch):
+        import config
+
+        def raise_file_error(*args, **kwargs):
+            raise OSError("read-only filesystem")
+
+        monkeypatch.setattr(config, "RotatingFileHandler", raise_file_error)
+
+        handler = config._create_request_log_handler("/read-only/request.log")
+
+        assert type(handler) is logging.StreamHandler
 
 
 class TestNormalizeBootTarget:
@@ -127,8 +148,7 @@ class TestLoadConfig:
             assert switch["port"] == 22
             assert config.SECRETS[switch_id]["username"]
             assert config.SECRETS[switch_id]["password"]
-        assert config.CONFIG["dell-db-02"]["vnc"]["port"] == 5901
-        assert config.CONFIG["dell-db-02"]["vnc"]["key_delay"] == 0.01
+        assert config.CONFIG["dell-db-02"]["vnc_port"] == 5901
         assert config.get_server_credentials("dell-db-02")["vnc_password"]
 
     def test_loads_all_files(self, tmp_path, monkeypatch):
