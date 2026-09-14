@@ -49,16 +49,16 @@ def _console_settings(server_id: str):
     if not server_cfg:
         return None, _error(server_id, f"Unknown server: {server_id}")
 
-    vnc_cfg = server_cfg.get("vnc")
-    if not isinstance(vnc_cfg, dict):
+    vnc_port = server_cfg.get("vnc_port")
+    if not vnc_port:
         return None, _error(server_id, "No VNC console configured for this server")
 
-    host = vnc_cfg.get("host") or server_cfg.get("bmc_ip")
+    host = server_cfg.get("bmc_ip")
     if not host:
         return None, _error(server_id, "No VNC host or BMC address configured")
 
     try:
-        port = _configured_port(vnc_cfg.get("port"), "vnc.port")
+        port = _configured_port(vnc_port, "vnc_port")
     except ValueError as exc:
         return None, _error(server_id, str(exc))
 
@@ -68,21 +68,8 @@ def _console_settings(server_id: str):
         return None, _error(server_id, "Missing vnc_password in secrets")
     password = str(password)
 
-    try:
-        timeout = float(vnc_cfg.get("timeout", cfg.VNC_CAPTURE_TIMEOUT))
-    except (TypeError, ValueError):
-        return None, _error(server_id, "Invalid VNC capture timeout")
-    if not 1 <= timeout <= 300:
-        return None, _error(server_id, "VNC capture timeout must be between 1 and 300 seconds")
-
-    try:
-        key_delay = float(vnc_cfg["key_delay"])
-    except KeyError:
-        return None, _error(server_id, "vnc.key_delay must be explicitly configured")
-    except (TypeError, ValueError):
-        return None, _error(server_id, "Invalid VNC key delay")
-    if not 0 <= key_delay <= 0.2:
-        return None, _error(server_id, "VNC key delay must be between 0 and 0.2 seconds")
+    timeout = cfg.VNC_CAPTURE_TIMEOUT
+    key_delay = 0.01
 
     return {
         "host": str(host),

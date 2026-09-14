@@ -440,7 +440,7 @@ async def _collect_one(
             "command_sent": False,
             "retry_safe": True,
         }
-    vnc_available = isinstance(server.get("vnc"), dict)
+    vnc_available = bool(server.get("vnc_port"))
     if transport == "vnc":
         return {
             "server_id": server_id,

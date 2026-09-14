@@ -84,7 +84,7 @@ def _configure():
         "vendor": "dell",
         "expected_host_macs": ["aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02"],
         "serial_number": "ABC123",
-        "vnc": {"port": 5901},
+        "vnc_port": 5901,
     }
 
 

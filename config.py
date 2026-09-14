@@ -25,9 +25,21 @@ logger = logging.getLogger(__name__)
 # Configure request logger
 request_logger = logging.getLogger("request_logger")
 request_logger.setLevel(logging.INFO)
+DEFAULT_REQUEST_LOG_PATH = "/tmp/baremetal-mcp-requests.log"
+REQUEST_LOG_PATH = os.getenv("REQUEST_LOG_PATH", DEFAULT_REQUEST_LOG_PATH)
+
+
+def _create_request_log_handler(log_path: str) -> logging.Handler:
+    """Create the rotating request log handler, falling back to stderr."""
+    try:
+        return RotatingFileHandler(log_path, maxBytes=1000000, backupCount=5)
+    except OSError as exc:
+        logger.warning("Unable to open request log %s; falling back to stderr: %s", log_path, exc)
+        return logging.StreamHandler()
+
+
 if not any(isinstance(h, RotatingFileHandler) for h in request_logger.handlers):
-    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log_requests.log")
-    handler = RotatingFileHandler(log_path, maxBytes=1000000, backupCount=5)
+    handler = _create_request_log_handler(REQUEST_LOG_PATH)
     formatter = logging.Formatter("%(asctime)s - %(message)s")
     handler.setFormatter(formatter)
     request_logger.addHandler(handler)

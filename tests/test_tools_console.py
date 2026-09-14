@@ -21,14 +21,11 @@ def _clear_console_sessions():
     _CONSOLE_LOCKS.clear()
 
 
-def _configure_console(config, *, vnc=None, secrets=None):
-    vnc_settings = {"port": 5901, "key_delay": 0.01}
-    if vnc is not None:
-        vnc_settings.update(vnc)
+def _configure_console(config, *, vnc_port=5901, secrets=None):
     config.CONFIG["console-host"] = {
         "bmc_ip": "10.0.0.20",
         "vendor": "dell",
-        "vnc": vnc_settings,
+        "vnc_port": vnc_port,
     }
     config.SECRETS["console-host"] = {"vnc_password": "not-real"} if secrets is None else secrets
 
@@ -75,28 +72,12 @@ class TestCaptureVncConsoleSync:
     def test_rejects_invalid_port(self):
         import config
 
-        _configure_console(config, vnc={"port": 70000})
+        _configure_console(config, vnc_port=70000)
         from tools.console import _capture_vnc_console_sync
 
         result = _capture_vnc_console_sync("console-host")
         assert result["status"] == "error"
-        assert "vnc.port" in result["message"]
-
-    def test_requires_explicit_key_delay(self):
-        import config
-
-        config.CONFIG["console-host"] = {
-            "bmc_ip": "10.0.0.20",
-            "vendor": "dell",
-            "vnc": {"port": 5901},
-        }
-        config.SECRETS["console-host"] = {"vnc_password": "not-real"}
-        from tools.console import _capture_vnc_console_sync
-
-        result = _capture_vnc_console_sync("console-host")
-
-        assert result["status"] == "error"
-        assert "key_delay" in result["message"]
+        assert "vnc_port" in result["message"]
 
     def test_success_returns_png_without_password_in_argv(self, monkeypatch):
         import config
@@ -123,7 +104,7 @@ class TestCaptureVncConsoleSync:
     def test_timeout_is_reported(self, monkeypatch):
         import config
 
-        _configure_console(config, vnc={"port": 5901, "timeout": 4})
+        _configure_console(config)
 
         def fake_run(*args, **kwargs):
             raise subprocess.TimeoutExpired("worker", 9)
@@ -200,14 +181,14 @@ class TestRunConsoleCommandSync:
     def test_command_and_password_are_not_in_argv(self, monkeypatch):
         import config
 
-        _configure_console(config, vnc={"port": 5901, "key_delay": 0.02})
+        _configure_console(config)
 
         def fake_run(args, **kwargs):
             assert args[2] == "run"
             assert "not-real" not in args
             assert "printf hello" not in args
             assert kwargs["input"] == "not-real\nprintf hello"
-            assert args[-2:] == ["1.25", "0.02"]
+            assert args[-2:] == ["1.25", "0.01"]
             output_path = Path(args[5])
             PILImage.new("RGB", (800, 600), "black").save(output_path, format="PNG")
             return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
@@ -218,16 +199,6 @@ class TestRunConsoleCommandSync:
         result = _run_console_command_sync("console-host", "printf hello", 1.25)
         assert result["status"] == "success"
         assert result["operation"] == "run"
-
-    def test_rejects_invalid_key_delay(self):
-        import config
-
-        _configure_console(config, vnc={"port": 5901, "key_delay": 1})
-        from tools.console import _run_console_command_sync
-
-        result = _run_console_command_sync("console-host", "true", 1)
-        assert result["status"] == "error"
-        assert "key delay" in result["message"]
 
     def test_invalid_png_preserves_sent_stage(self, monkeypatch):
         import config

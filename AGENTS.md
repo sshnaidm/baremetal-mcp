@@ -158,7 +158,8 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 - Hosts are organized by labs and tags in the config for filtering.
 - `get_firmware_inventory`, `get_hardware_overview`, and `get_system_info` return cached results. If results look stale after a hardware change, call `clear_server_cache(server_ids)`. `dell_update_firmware` automatically clears the firmware cache on success.
 - To change cache TTL values, timeouts, or retry settings, edit `global_config.yaml`. Defaults are defined in `config.py` and overridden by the YAML file at startup.
-- All Redfish requests and payloads are logged to `log_requests.log`.
+- All Redfish requests and payloads are logged to `REQUEST_LOG_PATH`, which defaults to
+  `/tmp/baremetal-mcp-requests.log`; filesystem errors fall back to stderr.
 
 ## Skills
 

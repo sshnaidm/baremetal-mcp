@@ -115,16 +115,14 @@ def _validate_server(
             errors.append("configured serial console transport conflicts with HPE vendor")
 
     if "vnc" in capabilities:
-        vnc = server.get("vnc")
-        if not isinstance(vnc, dict):
-            errors.append("vnc configuration is missing")
+        vnc_port = server.get("vnc_port")
+        if not vnc_port:
+            errors.append("vnc_port is missing")
         else:
             try:
-                _configured_port(vnc.get("port"), "vnc.port")
+                _configured_port(vnc_port, "vnc_port")
             except ValueError as exc:
                 errors.append(str(exc))
-            if "key_delay" not in vnc:
-                errors.append("vnc.key_delay must be explicitly configured")
         if not credentials["vnc_password"]:
             errors.append("vnc_password is missing from secrets or credential profile")
 

@@ -44,11 +44,7 @@ servers:
       transport: auto  # Dell -> SOL; HPE -> VSP
       port: 22
       connect_timeout: 10
-    vnc:
-      port: 5901
-      timeout: 30
-      key_delay: 0.01  # increase for a slow virtual keyboard
-      # vnc_password belongs in redfish_secrets.yaml, never here
+    vnc_port: 5901
 
   hpe-web-02:
     id: hpe-web-02
