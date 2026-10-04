@@ -240,14 +240,13 @@ def _xml_system_service_tags(xml_bytes: bytes) -> set[str]:
 
 def _validate_xml_identity(xml_bytes: bytes, identity: Dict[str, Any]) -> Dict[str, Any]:
     """Bind downloaded or cached XML to the live BMC identity before it is used."""
-    trusted = {
-        str(value).strip()
-        for value in (
-            identity.get("expected_serial_number"),
-            identity.get("observed_serial_number"),
-        )
-        if str(value or "").strip()
-    }
+    # A Dell chassis serial and its service tag can be different identifiers.
+    keys = (
+        ("expected_service_tag", "observed_service_tag")
+        if identity.get("observed_service_tag")
+        else ("expected_serial_number", "observed_serial_number")
+    )
+    trusted = {str(identity[key]).strip() for key in keys if str(identity.get(key) or "").strip()}
     if not trusted:
         raise ValueError("Cannot bind hardware inventory XML because the live BMC serial is unavailable")
     embedded = _xml_system_service_tags(xml_bytes)
@@ -429,30 +428,64 @@ async def _dell_identity(server_id: str, handler: Any) -> Dict[str, Any]:
         }
     data = response["data"]
     observed = str(data.get("SerialNumber") or "").strip()
+    oem_tag = str(
+        ((data.get("Oem") or {}).get("Dell") or {}).get("DellSystem", {}).get("ChassisServiceTag") or ""
+    ).strip()
+    sku = str(data.get("SKU") or "").strip()
+    sku_tag = sku if re.fullmatch(r"[A-Za-z0-9]{7}", sku) else ""
+    service_tag = oem_tag or sku_tag or observed
     host_config = cfg.CONFIG.get(server_id, {})
-    expected = str(host_config.get("serial_number") or host_config.get("service_tag") or "").strip()
-    if not observed:
-        return {
-            "status": "unverified",
-            "expected_serial_number": expected or None,
-            "observed_serial_number": None,
-            "message": "System identity was unavailable: Redfish returned no system serial number",
-        }
-    if expected and observed and expected.casefold() != observed.casefold():
-        return {
-            "status": "mismatch",
-            "expected_serial_number": expected,
-            "observed_serial_number": observed,
-            "message": "Configured host identity does not match the target BMC",
-        }
-    return {
-        "status": "verified" if expected and observed else "observed",
+    expected = str(host_config.get("serial_number") or "").strip()
+    expected_tag = str(host_config.get("service_tag") or "").strip()
+    identity = {
         "expected_serial_number": expected or None,
         "observed_serial_number": observed or None,
+        "expected_service_tag": expected_tag or None,
+        "observed_service_tag": service_tag or None,
+        "service_tag_source": (
+            "Oem.Dell.DellSystem.ChassisServiceTag" if oem_tag else "SKU" if sku_tag else "SerialNumber"
+        ),
         "model": data.get("Model"),
         "manufacturer": data.get("Manufacturer"),
         "uuid": data.get("UUID"),
     }
+    if not service_tag:
+        return {
+            **identity,
+            "status": "unverified",
+            "message": "System identity was unavailable: Redfish returned no serial or service tag",
+        }
+    if oem_tag and sku_tag and oem_tag.casefold() != sku_tag.casefold():
+        return {**identity, "status": "mismatch", "message": "Redfish service tag fields disagree"}
+    observed_values = {value.casefold() for value in (observed, service_tag) if value}
+    if (expected and expected.casefold() not in observed_values) or (
+        expected_tag and expected_tag.casefold() != service_tag.casefold()
+    ):
+        return {**identity, "status": "mismatch", "message": "Configured host identity does not match the target BMC"}
+    return {**identity, "status": "verified" if expected or expected_tag else "observed"}
+
+
+async def _discover_hardware_export_action(server_id: str, handler: Any) -> Optional[Dict[str, Any]]:
+    """Discover the advertised action after a definitive legacy-path 404."""
+    manager = await _redfish_call(server_id, "GET", handler.MANAGER_PATH)
+    if manager.get("status") != "success" or not isinstance(manager.get("data"), dict):
+        return None
+    link = (((manager["data"].get("Links") or {}).get("Oem") or {}).get("Dell") or {}).get("DellLCService") or {}
+    location = link.get("@odata.id")
+    if not location:
+        return None
+    service_path = _safe_redfish_location(server_id, location)
+    service = await _redfish_call(server_id, "GET", service_path)
+    if service.get("status") != "success" or not isinstance(service.get("data"), dict):
+        return None
+    action = (service["data"].get("Actions") or {}).get("#DellLCService.ExportHWInventory") or {}
+    target = action.get("target")
+    if not target:
+        return None
+    safe_target = _safe_redfish_location(server_id, target)
+    if urlsplit(safe_target).path.rsplit("/", 1)[-1] != "DellLCService.ExportHWInventory":
+        raise ValueError("Advertised hardware export action has an unexpected target")
+    return {**action, "target": safe_target}
 
 
 async def _export_hardware_inventory_single(
@@ -512,6 +545,19 @@ async def _export_hardware_inventory_single(
             payload={"ShareType": "Local"},
             timeout=max(1.0, min(timeout_seconds, float(cfg.DEFAULT_TIMEOUT))),
         )
+        if response.get("status_code") == 404:
+            action = await _discover_hardware_export_action(server_id, handler)
+            if action:
+                payload = {"ShareType": "Local"}
+                if "CIM-XML" in action.get("XMLSchema@Redfish.AllowableValues", []):
+                    payload["XMLSchema"] = "CIM-XML"
+                response = await _redfish_call(
+                    server_id,
+                    "POST",
+                    action["target"],
+                    payload=payload,
+                    timeout=max(1.0, min(timeout_seconds, float(cfg.DEFAULT_TIMEOUT))),
+                )
         if response.get("status") != "success":
             result = {"server_id": server_id, **response}
             result.setdefault("message", "Failed to start hardware inventory export")

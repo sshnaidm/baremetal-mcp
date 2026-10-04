@@ -555,3 +555,76 @@ class TestDellUpdateFirmware:
         mock_redfish_client({})
         result = await dell_update_firmware("nonexistent", "http://fw.local/file.exe")
         assert result["status"] == "error"
+
+
+class TestDellExportIdentityCompatibility:
+    @pytest.mark.parametrize("field", ["oem", "sku"])
+    async def test_chassis_serial_is_separate_from_service_tag(
+        self, field, setup_dell_config, mock_redfish_client, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("HARDWARE_INVENTORY_DIR", str(tmp_path))
+        system = dict(DELL_R750_SYSTEM, SerialNumber="CN-CHASSIS-SERIAL")
+        if field == "oem":
+            system["Oem"] = {"Dell": {"DellSystem": {"ChassisServiceTag": "B5TXMH3"}}}
+        else:
+            system["SKU"] = "B5TXMH3"
+        mock_redfish_client(
+            {
+                "/Systems/System.Embedded.1": make_mock_response(200, system),
+                "/DellLCService.ExportHWInventory": make_mock_response(202, {}, headers={"Location": "/inventory/tag"}),
+                "/inventory/tag": make_mock_response(200, content=_inventory_xml()),
+            }
+        )
+        result = await export_hardware_inventory_xml(["host1"], refresh=True)
+        assert result["status"] == "success"
+        identity = result["results"][0]["identity"]
+        assert identity["observed_serial_number"] == "CN-CHASSIS-SERIAL"
+        assert identity["observed_service_tag"] == "B5TXMH3"
+        assert result["results"][0]["xml_identity"]["service_tags"] == ["B5TXMH3"]
+
+    async def test_disagreeing_service_tag_fields_stop_before_post(
+        self, setup_dell_config, mock_redfish_client, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("HARDWARE_INVENTORY_DIR", str(tmp_path))
+        system = dict(DELL_R750_SYSTEM, SKU="OTHER01", Oem={"Dell": {"DellSystem": {"ChassisServiceTag": "B5TXMH3"}}})
+        mock_redfish_client({"/Systems/System.Embedded.1": make_mock_response(200, system)})
+        result = await export_hardware_inventory_xml(["host1"], refresh=True)
+        assert result["status"] == "error"
+        assert result["results"][0]["identity_mismatch"]
+
+    async def test_new_export_action_is_discovered_only_after_404(
+        self, setup_dell_config, mock_redfish_client, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("HARDWARE_INVENTORY_DIR", str(tmp_path))
+        path = "/redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/DellLCService"
+        target = path + "/Actions/DellLCService.ExportHWInventory"
+
+        def action_response(method, _url, **kwargs):
+            assert method == "POST"
+            assert kwargs["json"] == {"ShareType": "Local", "XMLSchema": "CIM-XML"}
+            return make_mock_response(202, {}, headers={"Location": "/inventory/new"})
+
+        mock_redfish_client(
+            {
+                "/redfish/v1/Dell/Managers/": make_mock_response(404, {}),
+                "/Systems/System.Embedded.1": make_mock_response(200, DELL_R750_SYSTEM),
+                "/Managers/iDRAC.Embedded.1": make_mock_response(
+                    200, {"Links": {"Oem": {"Dell": {"DellLCService": {"@odata.id": path}}}}}
+                ),
+                path: make_mock_response(
+                    200,
+                    {
+                        "Actions": {
+                            "#DellLCService.ExportHWInventory": {
+                                "target": target,
+                                "XMLSchema@Redfish.AllowableValues": ["CIM-XML"],
+                            }
+                        }
+                    },
+                ),
+                target: action_response,
+                "/inventory/new": make_mock_response(200, content=_inventory_xml()),
+            }
+        )
+        result = await export_hardware_inventory_xml(["host1"], refresh=True)
+        assert result["status"] == "success"

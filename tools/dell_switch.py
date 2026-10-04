@@ -112,6 +112,7 @@ def _command_plan(switch_ids: List[str], commands: List[str], stop_on_error: boo
         "stop_on_error": stop_on_error,
         "session_setup": ["terminal length 0"],
         "commands_are_unrestricted": True,
+        "writes_startup_configuration": any(_writes_startup_configuration(command) for command in commands),
     }
 
 
@@ -119,6 +120,33 @@ def _command_confirmation(plan: Dict) -> str:
     canonical = json.dumps(plan, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return f"APPLY DELL SWITCH COMMANDS {digest}"
+
+
+def _writes_startup_configuration(command: str) -> bool:
+    """Conservatively identify OS10 commands that may persist switch configuration."""
+    for segment in re.split(r"[;&|]", command.casefold()):
+        normalized = " ".join(segment.split())
+        if normalized.startswith("do "):
+            normalized = normalized[3:]
+        parts = normalized.split()
+        if not parts:
+            continue
+        if parts[0] in {"write", "wr", "save"}:
+            return True
+        if parts[0] in {"copy", "cp"} and len(parts) >= 3:
+            destination = parts[-1]
+            if destination.startswith("st") or "startup" in destination:
+                return True
+        if parts[0] in {"delete", "erase"} and any("startup" in part for part in parts[1:]):
+            return True
+        if "startup-configuration" in normalized or "startup-config" in normalized:
+            return True
+    return False
+
+
+def _startup_save_confirmation(plan: Dict) -> str:
+    """Require a second, plan-bound token for a separately authorized startup write."""
+    return _command_confirmation(plan).replace("APPLY DELL SWITCH COMMANDS", "SAVE SWITCH STARTUP CONFIGURATION", 1)
 
 
 def _has_cli_error(output: str) -> bool:
@@ -135,8 +163,16 @@ def _dell_switch_apply_commands_sync(
     switch_id: str,
     commands: List[str],
     stop_on_error: bool,
+    startup_save_authorized: bool = False,
 ) -> Dict:
-    """Run an unrestricted, previously confirmed OS10 command sequence."""
+    """Run a confirmed OS10 sequence, guarding startup writes before connecting."""
+    if any(_writes_startup_configuration(command) for command in commands) and not startup_save_authorized:
+        return {
+            "switch_id": switch_id,
+            "status": "error",
+            "phase": "startup-save-confirmation",
+            "message": "Startup-configuration writes require separate explicit authorization",
+        }
     _load_config()
     switch_cfg = SWITCHES.get(switch_id)
     if not switch_cfg:
@@ -216,12 +252,14 @@ async def _dell_switch_apply_commands(
     switch_id: str,
     commands: List[str],
     stop_on_error: bool,
+    startup_save_authorized: bool = False,
 ) -> Dict:
     return await asyncio.to_thread(
         _dell_switch_apply_commands_sync,
         switch_id,
         commands,
         stop_on_error,
+        startup_save_authorized,
     )
 
 
@@ -316,16 +354,25 @@ async def dell_switch_run_command(switch_id: str, command: str) -> Dict:
     return result
 
 
-@mcp.tool(description="Run any Dell OS10 CLI command sequence after an exact dry-run confirmation.")
+@mcp.tool(
+    description=(
+        "Run Dell OS10 CLI commands after dry-run confirmation. Startup-configuration writes "
+        "also require an explicit user request and separate startup-save confirmation."
+    )
+)
 async def dell_switch_apply_commands(
     switch_ids: List[str],
     commands: List[str],
     dry_run: bool = True,
     confirmation: Optional[str] = None,
     stop_on_error: bool = True,
+    startup_save_user_confirmed: bool = False,
+    startup_save_confirmation: Optional[str] = None,
 ) -> Dict:
-    """Run unrestricted CLI commands, including configuration and save commands."""
+    """Run confirmed CLI commands; startup writes need separate user authorization."""
     validation_error = _validate_command_plan(switch_ids, commands, dry_run, stop_on_error)
+    if not isinstance(startup_save_user_confirmed, bool):
+        validation_error = "startup_save_user_confirmed must be a boolean"
     if validation_error:
         return {
             "status": "error",
@@ -338,12 +385,16 @@ async def dell_switch_apply_commands(
     plan = _command_plan(switch_ids, commands, stop_on_error)
     required_confirmation = _command_confirmation(plan)
     if dry_run:
-        return {
+        preview = {
             "status": "success",
             "phase": "dry-run",
             "plan": plan,
             "confirmation_required": required_confirmation,
         }
+        if plan["writes_startup_configuration"]:
+            preview["startup_save_requires_explicit_user_confirmation"] = True
+            preview["startup_save_confirmation_required"] = _startup_save_confirmation(plan)
+        return preview
     if confirmation != required_confirmation:
         return {
             "status": "error",
@@ -353,8 +404,26 @@ async def dell_switch_apply_commands(
             "plan": plan,
         }
 
+    if plan["writes_startup_configuration"] and (
+        not startup_save_user_confirmed or startup_save_confirmation != _startup_save_confirmation(plan)
+    ):
+        return {
+            "status": "error",
+            "phase": "startup-save-confirmation",
+            "message": (
+                "Writing switch startup configuration requires a separate explicit user request "
+                "and confirmation; set startup_save_user_confirmed=true only after that user "
+                "confirmation and provide startup_save_confirmation_required from the dry run"
+            ),
+            "startup_save_confirmation_required": _startup_save_confirmation(plan),
+            "plan": plan,
+        }
+
     results = await asyncio.gather(
-        *(_dell_switch_apply_commands(switch_id, commands, stop_on_error) for switch_id in switch_ids)
+        *(
+            _dell_switch_apply_commands(switch_id, commands, stop_on_error, plan["writes_startup_configuration"])
+            for switch_id in switch_ids
+        )
     )
     return {
         "status": "success" if all(result.get("status") == "success" for result in results) else "error",

@@ -11,13 +11,15 @@ description: Query Dell SmartFabric OS10 switches and run confirmed generic CLI 
 
 3. The tool is read-only and accepts exactly one single-line Dell OS10 `show` command. It rejects configuration commands and embedded newlines.
 
-4. Use `dell_switch_apply_commands` for any CLI sequence that is not a single read-only `show` command. It accepts `switch_ids` and an ordered `commands` list. Commands are unrestricted: configuration, reload, firmware, delete, and startup-configuration save commands are all passed to OS10. Each command must be one list item without embedded newlines.
+4. Use `dell_switch_apply_commands` for any CLI sequence that is not a single read-only `show` command. It accepts `switch_ids` and an ordered `commands` list. Each command must be one list item without embedded newlines. Treat a running-configuration change and a startup-configuration write as separate actions: a request to configure a port, VLAN, or switch does **not** authorize saving it to startup.
 
 5. Always call `dell_switch_apply_commands` with its default `dry_run=true` first. Review the switch IDs and every command, then call it with `dry_run=false` and `confirmation` exactly equal to the returned `confirmation_required` value. The confirmation is bound to the complete plan; any switch, command, order, or `stop_on_error` change requires a new dry run.
 
-6. Each switch gets one SSH session and the switches run in parallel. Commands run exactly in the supplied order. The tool stops after an OS10 CLI error by default and returns ordered command output. It does not enter configuration mode or save configuration unless those commands are explicitly present.
+6. Never include `copy running-configuration startup-configuration`, `write memory`, or any other startup-configuration write unless the user explicitly requests that persistent save. Even then, show the exact target switches and save command and obtain a separate user confirmation before execution. The MCP tool requires `startup_save_user_confirmed=true` and the plan-bound `startup_save_confirmation_required` token in `startup_save_confirmation`, in addition to the ordinary dry-run `confirmation`. Do not set the user-confirmed flag based only on the user's authorization for a running-config change.
 
-For example, a breakout and explicit startup save can use this ordered command list:
+7. Each switch gets one SSH session and the switches run in parallel. Commands run exactly in the supplied order. The tool stops after an OS10 CLI error by default and returns ordered command output. It does not enter configuration mode or save configuration unless those commands are explicitly present and confirmed.
+
+For example, a breakout that changes only the running configuration can use this ordered command list:
 
 ```yaml
 switch_ids:
@@ -30,10 +32,9 @@ commands:
   - switchport access vlan 307
   - no shutdown
   - end
-  - copy running-configuration startup-configuration
 ```
 
-7. Use the exact calls below for common queries:
+8. Use the exact calls below for common queries:
 
    | Need | Tool call |
    |------|-----------|
@@ -54,6 +55,6 @@ commands:
 - Credentials come from `redfish_secrets.yaml`; do not put them in the switch configuration.
 - Each call opens a fresh SSH session.
 - Never place passwords or other secrets in a command list because MCP arguments and command results may be logged.
-- Do not use the unrestricted tool for configuration unless the user explicitly authorizes the change. Preserve any user constraint such as running-config-only by omitting save commands from the reviewed plan.
+- Do not use the unrestricted tool for configuration unless the user explicitly authorizes the change. Never infer permission to save startup configuration from permission to change running configuration.
 - Switch entries use `hostname` and require an SSH `port` directly or through `switch_defaults`; `vendor`, `model`, and `tags` are optional. Credentials belong in `redfish_secrets.yaml`.
 - The implementation targets Dell SmartFabric OS10. Other Dell switch operating systems have different CLI behavior and are not currently supported.
