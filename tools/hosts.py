@@ -1,15 +1,14 @@
-#!/usr/bin/env python3
 """
 Host management tools - list and query host configurations.
 """
 
-from typing import Any, Dict, List
-
-from config import mcp, CONFIG, SWITCHES, _load_config, CONFIG_FILE
 import os
+from typing import Any
+
+from config import CONFIG, CONFIG_FILE, SWITCHES, _load_config, mcp
 
 
-def _check_config() -> Dict:
+def _check_config() -> dict:
     """Load config and check if it exists, return error dict if not found."""
     _load_config()
     if not CONFIG and not os.path.exists(CONFIG_FILE):
@@ -24,7 +23,7 @@ def _check_config() -> Dict:
 
 
 @mcp.tool(description="List all known hosts with their configuration (mirror of hosts://all).")
-def list_hosts() -> Dict:
+def list_hosts() -> dict:
     """Return the complete hosts mapping.
 
     Returns
@@ -40,7 +39,7 @@ def list_hosts() -> Dict:
 
 
 @mcp.tool(description="Get a single host configuration by id (mirror of hosts://id/{server_id}).")
-def get_host(server_id: str) -> Dict:
+def get_host(server_id: str) -> dict:
     """Get configuration for a specific server.
 
     Args
@@ -59,7 +58,7 @@ def get_host(server_id: str) -> Dict:
 
 
 @mcp.tool(description="Get multiple host configurations by ids (mirror of hosts://ids/{server_ids}).")
-def get_hosts(server_ids: List[str]) -> Dict:
+def get_hosts(server_ids: list[str]) -> dict:
     """Get configurations for multiple servers.
 
     Args
@@ -71,8 +70,8 @@ def get_hosts(server_ids: List[str]) -> Dict:
     err = _check_config()
     if err:
         return err
-    data: Dict[str, Dict[str, Any]] = {}
-    missing: List[str] = []
+    data: dict[str, dict[str, Any]] = {}
+    missing: list[str] = []
     for sid in server_ids:
         cfg = CONFIG.get(sid)
         if cfg is None:
@@ -83,7 +82,7 @@ def get_hosts(server_ids: List[str]) -> Dict:
 
 
 @mcp.tool(description="List hosts that belong to a given lab (mirror of hosts://lab/{lab}).")
-def list_hosts_by_lab(lab: str) -> Dict:
+def list_hosts_by_lab(lab: str) -> dict:
     """Return hosts for a given lab.
 
     Args
@@ -101,7 +100,7 @@ def list_hosts_by_lab(lab: str) -> Dict:
 
 
 @mcp.tool(description="List hosts that have a specific tag (mirror of hosts://tag/{tag}).")
-def list_hosts_by_tag(tag: str) -> Dict:
+def list_hosts_by_tag(tag: str) -> dict:
     """Return hosts that contain the given tag.
 
     Args
@@ -119,7 +118,7 @@ def list_hosts_by_tag(tag: str) -> Dict:
 
 
 @mcp.tool(description="List switches from the configuration (entries under the 'switches' section).")
-def list_switches() -> Dict:
+def list_switches() -> dict:
     """Return all switches defined in the configuration.
 
     Returns

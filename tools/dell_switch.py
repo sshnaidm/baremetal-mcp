@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Dell OS10 switch tools - run read-only or confirmed CLI commands via SSH."""
 
 import asyncio
@@ -6,7 +5,6 @@ import hashlib
 import json
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple
 
 import paramiko
 
@@ -15,7 +13,7 @@ from config import SECRETS, SWITCHES, _load_config, mcp
 from helpers import _configured_port
 
 
-def _get_command_output(channel, command: str, prompt: str, timeout: Optional[int] = None) -> str:
+def _get_command_output(channel: paramiko.Channel, command: str, prompt: str, timeout: int | None = None) -> str:
     """Send a command and return cleaned output after the prompt reappears."""
     channel.send(command + "\n")
 
@@ -37,7 +35,7 @@ def _get_command_output(channel, command: str, prompt: str, timeout: Optional[in
     return output
 
 
-def _validate_read_only_command(command: str) -> Optional[str]:
+def _validate_read_only_command(command: str) -> str | None:
     """Return an error for commands outside Dell OS10's read-only show family."""
     if not command or not command.strip():
         return "Command must not be empty"
@@ -49,10 +47,10 @@ def _validate_read_only_command(command: str) -> Optional[str]:
 
 
 def _get_dynamic_command_output(
-    channel: Any,
+    channel: paramiko.Channel,
     command: str,
-    timeout: Optional[int] = None,
-) -> Tuple[str, str]:
+    timeout: int | None = None,
+) -> tuple[str, str]:
     """Send one command while allowing the OS10 prompt to change modes."""
     channel.send(command + "\n")
     if timeout is None:
@@ -78,11 +76,11 @@ def _get_dynamic_command_output(
 
 
 def _validate_command_plan(
-    switch_ids: List[str],
-    commands: List[str],
+    switch_ids: list[str],
+    commands: list[str],
     dry_run: bool,
     stop_on_error: bool,
-) -> Optional[str]:
+) -> str | None:
     """Validate plan structure without restricting which OS10 commands may run."""
     if not isinstance(switch_ids, list) or not switch_ids:
         return "switch_ids must be a non-empty list"
@@ -105,7 +103,7 @@ def _validate_command_plan(
     return None
 
 
-def _command_plan(switch_ids: List[str], commands: List[str], stop_on_error: bool) -> Dict:
+def _command_plan(switch_ids: list[str], commands: list[str], stop_on_error: bool) -> dict:
     return {
         "switch_ids": switch_ids,
         "commands": commands,
@@ -116,7 +114,7 @@ def _command_plan(switch_ids: List[str], commands: List[str], stop_on_error: boo
     }
 
 
-def _command_confirmation(plan: Dict) -> str:
+def _command_confirmation(plan: dict) -> str:
     canonical = json.dumps(plan, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return f"APPLY DELL SWITCH COMMANDS {digest}"
@@ -126,8 +124,7 @@ def _writes_startup_configuration(command: str) -> bool:
     """Conservatively identify OS10 commands that may persist switch configuration."""
     for segment in re.split(r"[;&|]", command.casefold()):
         normalized = " ".join(segment.split())
-        if normalized.startswith("do "):
-            normalized = normalized[3:]
+        normalized = normalized.removeprefix("do ")
         parts = normalized.split()
         if not parts:
             continue
@@ -144,7 +141,7 @@ def _writes_startup_configuration(command: str) -> bool:
     return False
 
 
-def _startup_save_confirmation(plan: Dict) -> str:
+def _startup_save_confirmation(plan: dict) -> str:
     """Require a second, plan-bound token for a separately authorized startup write."""
     return _command_confirmation(plan).replace("APPLY DELL SWITCH COMMANDS", "SAVE SWITCH STARTUP CONFIGURATION", 1)
 
@@ -161,10 +158,10 @@ def _has_cli_error(output: str) -> bool:
 
 def _dell_switch_apply_commands_sync(
     switch_id: str,
-    commands: List[str],
+    commands: list[str],
     stop_on_error: bool,
     startup_save_authorized: bool = False,
-) -> Dict:
+) -> dict:
     """Run a confirmed OS10 sequence, guarding startup writes before connecting."""
     if any(_writes_startup_configuration(command) for command in commands) and not startup_save_authorized:
         return {
@@ -192,8 +189,8 @@ def _dell_switch_apply_commands_sync(
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    executed: List[str] = []
-    command_results: List[Dict[str, str]] = []
+    executed: list[str] = []
+    command_results: list[dict[str, str]] = []
     try:
         client.connect(
             hostname=host,
@@ -250,10 +247,10 @@ def _dell_switch_apply_commands_sync(
 
 async def _dell_switch_apply_commands(
     switch_id: str,
-    commands: List[str],
+    commands: list[str],
     stop_on_error: bool,
     startup_save_authorized: bool = False,
-) -> Dict:
+) -> dict:
     return await asyncio.to_thread(
         _dell_switch_apply_commands_sync,
         switch_id,
@@ -263,7 +260,7 @@ async def _dell_switch_apply_commands(
     )
 
 
-def _dell_switch_ssh_commands_sync(switch_id: str, commands: List[str]) -> Dict:
+def _dell_switch_ssh_commands_sync(switch_id: str, commands: list[str]) -> dict:
     """Connect to a Dell OS10 switch and run read-only commands. Blocking."""
     _load_config()
 
@@ -337,13 +334,13 @@ def _dell_switch_ssh_commands_sync(switch_id: str, commands: List[str]) -> Dict:
         client.close()
 
 
-async def _dell_switch_ssh_commands(switch_id: str, commands: List[str]) -> Dict:
+async def _dell_switch_ssh_commands(switch_id: str, commands: list[str]) -> dict:
     """Async wrapper around blocking Dell switch SSH commands."""
     return await asyncio.to_thread(_dell_switch_ssh_commands_sync, switch_id, commands)
 
 
 @mcp.tool(description="Run a read-only show command on a Dell OS10 switch via SSH.")
-async def dell_switch_run_command(switch_id: str, command: str) -> Dict:
+async def dell_switch_run_command(switch_id: str, command: str) -> dict:
     """Run one Dell OS10 show command with paging disabled.
 
     Only a single-line command in the ``show`` command family is accepted.
@@ -361,14 +358,14 @@ async def dell_switch_run_command(switch_id: str, command: str) -> Dict:
     )
 )
 async def dell_switch_apply_commands(
-    switch_ids: List[str],
-    commands: List[str],
+    switch_ids: list[str],
+    commands: list[str],
     dry_run: bool = True,
-    confirmation: Optional[str] = None,
+    confirmation: str | None = None,
     stop_on_error: bool = True,
     startup_save_user_confirmed: bool = False,
-    startup_save_confirmation: Optional[str] = None,
-) -> Dict:
+    startup_save_confirmation: str | None = None,
+) -> dict:
     """Run confirmed CLI commands; startup writes need separate user authorization."""
     validation_error = _validate_command_plan(switch_ids, commands, dry_run, stop_on_error)
     if not isinstance(startup_save_user_confirmed, bool):

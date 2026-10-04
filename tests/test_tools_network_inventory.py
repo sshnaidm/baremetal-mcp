@@ -1,7 +1,10 @@
 """Tests for persistent network inventory tools."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
+import pytest
 import yaml
 from fastmcp import Client
 
@@ -10,14 +13,14 @@ from tools.network_inventory import (
     export_network_inventory,
     get_network_inventory,
     list_network_inventories,
-    save_network_inventory,
     save_network_inventories,
+    save_network_inventory,
     search_network_inventory,
     validate_network_inventories,
 )
 
 
-def _interfaces():
+def _interfaces() -> list[object]:
     return [
         {
             "name": "eno1",
@@ -41,11 +44,11 @@ def _interfaces():
     ]
 
 
-def _use_temp_inventory(monkeypatch, tmp_path: Path):
+def _use_temp_inventory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("NETWORK_INVENTORY_DIR", str(tmp_path / "inventory"))
 
 
-async def test_inventory_tools_are_registered():
+async def test_inventory_tools_are_registered() -> None:
     expected = {
         "save_network_inventory",
         "get_network_inventory",
@@ -60,7 +63,7 @@ async def test_inventory_tools_are_registered():
     assert expected <= names
 
 
-async def test_save_get_and_list_inventory(monkeypatch, tmp_path):
+async def test_save_get_and_list_inventory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _use_temp_inventory(monkeypatch, tmp_path)
 
     saved = await save_network_inventory(
@@ -94,7 +97,7 @@ async def test_save_get_and_list_inventory(monkeypatch, tmp_path):
     assert listed["hosts"][0]["links_up"] == 1
 
 
-async def test_save_replaces_latest_snapshot(monkeypatch, tmp_path):
+async def test_save_replaces_latest_snapshot(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _use_temp_inventory(monkeypatch, tmp_path)
     first = await save_network_inventory("host1", _interfaces())
     second = await save_network_inventory("host1", _interfaces()[:1])
@@ -105,7 +108,7 @@ async def test_save_replaces_latest_snapshot(monkeypatch, tmp_path):
     assert len(loaded["inventory"]["interfaces"]) == 1
 
 
-async def test_search_inventory_filters(monkeypatch, tmp_path):
+async def test_search_inventory_filters(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _use_temp_inventory(monkeypatch, tmp_path)
     await save_network_inventory("host1", _interfaces(), observed_at="2026-09-01T10:00:00Z")
 
@@ -126,7 +129,7 @@ async def test_search_inventory_filters(monkeypatch, tmp_path):
     assert by_ip["count"] == 1
 
 
-async def test_validation_errors(monkeypatch, tmp_path):
+async def test_validation_errors(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _use_temp_inventory(monkeypatch, tmp_path)
 
     assert (await save_network_inventory("", []))["status"] == "error"
@@ -139,7 +142,7 @@ async def test_validation_errors(monkeypatch, tmp_path):
     assert (await search_network_inventory(mac="not-a-mac"))["status"] == "error"
 
 
-async def test_list_and_search_report_malformed_documents(monkeypatch, tmp_path):
+async def test_list_and_search_report_malformed_documents(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _use_temp_inventory(monkeypatch, tmp_path)
     hosts = tmp_path / "inventory" / "hosts"
     hosts.mkdir(parents=True)
@@ -154,7 +157,9 @@ async def test_list_and_search_report_malformed_documents(monkeypatch, tmp_path)
     assert len(searched["errors"]) == 1
 
 
-async def test_deeply_malformed_documents_are_reported_by_all_consumers(monkeypatch, tmp_path):
+async def test_deeply_malformed_documents_are_reported_by_all_consumers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     _use_temp_inventory(monkeypatch, tmp_path)
     hosts = tmp_path / "inventory" / "hosts"
     hosts.mkdir(parents=True)
@@ -181,7 +186,7 @@ async def test_deeply_malformed_documents_are_reported_by_all_consumers(monkeypa
     assert exported["status"] == "error" and len(exported["malformed"]) == 1
 
 
-async def test_rejects_older_snapshot_and_invalid_typed_fields(monkeypatch, tmp_path):
+async def test_rejects_older_snapshot_and_invalid_typed_fields(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _use_temp_inventory(monkeypatch, tmp_path)
     first = await save_network_inventory("host1", _interfaces(), observed_at="2026-09-02T10:00:00Z")
     older = await save_network_inventory("host1", _interfaces(), observed_at="2026-09-01T10:00:00Z")
@@ -196,7 +201,9 @@ async def test_rejects_older_snapshot_and_invalid_typed_fields(monkeypatch, tmp_
     assert (await save_network_inventory("host2", invalid_family))["status"] == "error"
 
 
-async def test_batch_save_duplicate_guard_and_search_pagination(monkeypatch, tmp_path):
+async def test_batch_save_duplicate_guard_and_search_pagination(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     _use_temp_inventory(monkeypatch, tmp_path)
     batch = await save_network_inventories(
         [
@@ -216,7 +223,9 @@ async def test_batch_save_duplicate_guard_and_search_pagination(monkeypatch, tmp
     assert (await search_network_inventory(limit=0))["status"] == "error"
 
 
-async def test_validate_and_export_indexes_keep_bmc_macs_separate(monkeypatch, tmp_path):
+async def test_validate_and_export_indexes_keep_bmc_macs_separate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     _use_temp_inventory(monkeypatch, tmp_path)
     config.CONFIG.update(
         {

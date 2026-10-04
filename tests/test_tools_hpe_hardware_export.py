@@ -1,24 +1,27 @@
 """Focused tests for complete, bounded HPE hardware snapshots."""
 
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from tools import hpe_hardware_export as hpe
 from handlers import HPE
+from tools import hpe_hardware_export as hpe
 
 SYSTEM = "/redfish/v1/Systems/1"
 CHASSIS = "/redfish/v1/Chassis/1"
 
 
-def _collection(path, members):
+def _collection(path: str, members: list[dict[str, Any]]) -> dict[str, Any]:
     return {"@odata.id": path, "Members": members, "Members@odata.count": len(members)}
 
 
-def _routes():
+def _routes() -> dict[str, Any]:
     root = {"ProtocolFeaturesSupported": {"ExpandQuery": {"MaxLevels": 1, "NoLinks": True}}}
     system = {
         "@odata.id": SYSTEM,
@@ -101,17 +104,19 @@ def _routes():
 
 
 @pytest.fixture
-def mocked_export(monkeypatch, tmp_path):
+def mocked_export(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> tuple[dict[str, Any], list[tuple[str, str, str]], Path]:
     routes = _routes()
     calls = []
 
-    async def redfish(server_id, method, path):
+    async def redfish(server_id: str, method: str, path: str) -> dict[str, Any]:
         calls.append((server_id, method, path))
         if path not in routes:
             return {"status": "error", "message": "not found"}
         return {"status": "success", "data": routes[path]}
 
-    async def handler(_server_id):
+    async def handler(_server_id: str) -> HPE:
         return HPE("user", "password")
 
     monkeypatch.setattr(hpe, "_redfish_call", redfish)
@@ -122,7 +127,9 @@ def mocked_export(monkeypatch, tmp_path):
     return routes, calls, tmp_path
 
 
-def test_export_expands_slots_and_follows_ports(mocked_export):
+def test_export_expands_slots_and_follows_ports(
+    mocked_export: tuple[dict[str, Any], list[tuple[str, str, str]], Path],
+) -> None:
     _routes_dict, calls, tmp_path = mocked_export
     result = asyncio.run(hpe.export_hpe_hardware_inventory(["host1"], collection="test"))
     assert result["status"] == "success"
@@ -138,7 +145,9 @@ def test_export_expands_slots_and_follows_ports(mocked_export):
     assert (tmp_path / "test" / "manifest.json").exists()
 
 
-def test_identity_mismatch_refuses_snapshot(mocked_export):
+def test_identity_mismatch_refuses_snapshot(
+    mocked_export: tuple[dict[str, Any], list[tuple[str, str, str]], Path],
+) -> None:
     routes, _calls, tmp_path = mocked_export
     routes[SYSTEM]["SerialNumber"] = "OTHER"
     result = asyncio.run(hpe.export_hpe_hardware_inventory(["host1"], collection="test"))
@@ -146,7 +155,9 @@ def test_identity_mismatch_refuses_snapshot(mocked_export):
     assert not list((tmp_path / "test").glob("hpe_*.json"))
 
 
-def test_partial_read_does_not_replace_complete_snapshot(mocked_export):
+def test_partial_read_does_not_replace_complete_snapshot(
+    mocked_export: tuple[dict[str, Any], list[tuple[str, str, str]], Path],
+) -> None:
     routes, _calls, _tmp_path = mocked_export
     success = asyncio.run(hpe.export_hpe_hardware_inventory(["host1"], collection="test"))
     path = Path(success["results"][0]["file_path"])
@@ -158,23 +169,23 @@ def test_partial_read_does_not_replace_complete_snapshot(mocked_export):
     assert path.read_bytes() == before
 
 
-def test_rejects_cross_origin_and_traversal_links():
+def test_rejects_cross_origin_and_traversal_links() -> None:
     assert hpe._path("https://evil.example/redfish/v1/Systems/1") is None
     assert hpe._path("/redfish/v1/../outside") is None
     assert hpe._path("/redfish/v1/Systems/1") == "/redfish/v1/Systems/1"
 
 
-def test_mcp_tool_is_registered():
+def test_mcp_tool_is_registered() -> None:
     from fastmcp import Client
 
-    async def names():
+    async def names() -> set[str]:
         async with Client(hpe.mcp) as client:
             return {tool.name for tool in await client.list_tools()}
 
     assert "export_hpe_hardware_inventory" in asyncio.run(names())
 
 
-def _oem_routes(routes):
+def _oem_routes(routes: dict[str, Any]) -> str:
     smart = f"{SYSTEM}/SmartStorage"
     base = f"{SYSTEM}/BaseNetworkAdapters"
     controller = f"{smart}/ArrayControllers/0"
@@ -204,7 +215,9 @@ def _oem_routes(routes):
     return controller
 
 
-def test_oem_storage_and_nic_fallback_recovers_standard_storage_error(mocked_export):
+def test_oem_storage_and_nic_fallback_recovers_standard_storage_error(
+    mocked_export: tuple[dict[str, Any], list[tuple[str, str, str]], Path],
+) -> None:
     routes, _calls, _tmp = mocked_export
     _oem_routes(routes)
     del routes[f"{SYSTEM}/Storage?$expand=."]
@@ -221,7 +234,9 @@ def test_oem_storage_and_nic_fallback_recovers_standard_storage_error(mocked_exp
     assert result["results"][0]["warnings"]
 
 
-def test_incomplete_oem_storage_preserves_snapshot(mocked_export):
+def test_incomplete_oem_storage_preserves_snapshot(
+    mocked_export: tuple[dict[str, Any], list[tuple[str, str, str]], Path],
+) -> None:
     routes, _calls, _tmp = mocked_export
     controller = _oem_routes(routes)
     result = asyncio.run(hpe.export_hpe_hardware_inventory(["host1"], collection="oem"))

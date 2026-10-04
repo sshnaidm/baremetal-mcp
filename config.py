@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Configuration, globals, and constants for MCP Redfish Server.
 """
@@ -6,15 +5,15 @@ Configuration, globals, and constants for MCP Redfish Server.
 import copy
 import logging
 import os
-import yaml
 from logging.handlers import RotatingFileHandler
-from typing import Any, Dict, Optional
+from typing import Any
 
+import urllib3
+import yaml
 from fastmcp import FastMCP
 
 # Suppress InsecureRequestWarning for unverified HTTPS requests
 from urllib3.exceptions import InsecureRequestWarning
-import urllib3
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -49,11 +48,11 @@ mcp = FastMCP(name="baremetal-mcp")
 
 # --- Configuration and Globals ---
 
-CONFIG: Dict = {}
-SWITCHES: Dict = {}
-SECRETS: Dict = {}
-ISOS: Dict = {}
-SETTINGS: Dict = {}
+CONFIG: dict = {}
+SWITCHES: dict = {}
+SECRETS: dict = {}
+ISOS: dict = {}
+SETTINGS: dict = {}
 
 # Defaults — overridden by global_config.yaml if present
 DEFAULT_TIMEOUT = 60
@@ -86,10 +85,10 @@ ISOS_FILE = os.getenv("ISOS_FILE", "isos.yaml")
 SETTINGS_FILE = os.getenv("GLOBAL_CONFIG", "global_config.yaml")
 
 # Cache for discovered virtual media paths per server
-VIRTUAL_MEDIA_PATH_CACHE: Dict[str, str] = {}
+VIRTUAL_MEDIA_PATH_CACHE: dict[str, str] = {}
 
 # Common boot target aliases mapping to Redfish enums
-BOOT_TARGET_ALIASES: Dict[str, str] = {
+BOOT_TARGET_ALIASES: dict[str, str] = {
     "pxe": "Pxe",
     "network": "Pxe",
     "net": "Pxe",
@@ -106,12 +105,12 @@ BOOT_TARGET_ALIASES: Dict[str, str] = {
 
 def _bounded_setting(
     name: str,
-    current: Any,
+    current: float,
     *,
     integer: bool = False,
     minimum: float,
     maximum: float,
-) -> Any:
+) -> int | float:
     """Read one numeric setting, retaining a safe default when invalid."""
     value = SETTINGS.get(name, current)
     try:
@@ -133,7 +132,7 @@ def _bounded_setting(
         return current
 
 
-def _normalize_boot_target(target: str):
+def _normalize_boot_target(target: str) -> str | None:
     """Normalize boot target string to Redfish enum."""
     if not target:
         return None
@@ -141,7 +140,7 @@ def _normalize_boot_target(target: str):
     return BOOT_TARGET_ALIASES.get(t) or (target if target[0].isupper() else None)
 
 
-def _merge_connection_defaults(defaults: Any, entry: Any) -> Any:
+def _merge_connection_defaults(defaults: object, entry: object) -> object:
     """Deep-merge YAML connection defaults without sharing nested objects."""
     if not isinstance(defaults, dict):
         defaults = {}
@@ -156,7 +155,7 @@ def _merge_connection_defaults(defaults: Any, entry: Any) -> Any:
     return merged
 
 
-def _load_config():
+def _load_config() -> None:
     """Load server and secret configurations if not already loaded.
 
     Loads each mapping independently and tolerates a missing secrets file.
@@ -176,120 +175,119 @@ def _load_config():
     settings_file = SETTINGS_FILE
 
     # Load SETTINGS if empty — overrides module-level defaults
-    if not SETTINGS:
-        if os.path.exists(settings_file):
-            with open(settings_file, "r") as f:
-                raw_settings = yaml.safe_load(f) or {}
-                if isinstance(raw_settings, dict):
-                    SETTINGS.update(raw_settings)
-                    DEFAULT_TIMEOUT = _bounded_setting("default_timeout", DEFAULT_TIMEOUT, minimum=1, maximum=3600)
-                    MAX_RETRIES = _bounded_setting("max_retries", MAX_RETRIES, integer=True, minimum=1, maximum=10)
-                    BACKOFF_FACTOR = _bounded_setting("backoff_factor", BACKOFF_FACTOR, minimum=0, maximum=60)
-                    TTL_FIRMWARE_INVENTORY = _bounded_setting(
-                        "cache_ttl_firmware_inventory",
-                        TTL_FIRMWARE_INVENTORY,
-                        integer=True,
-                        minimum=0,
-                        maximum=31_536_000,
-                    )
-                    TTL_HARDWARE_OVERVIEW = _bounded_setting(
-                        "cache_ttl_hardware_overview",
-                        TTL_HARDWARE_OVERVIEW,
-                        integer=True,
-                        minimum=0,
-                        maximum=31_536_000,
-                    )
-                    TTL_SYSTEM_INFO = _bounded_setting(
-                        "cache_ttl_system_info",
-                        TTL_SYSTEM_INFO,
-                        integer=True,
-                        minimum=0,
-                        maximum=31_536_000,
-                    )
-                    TTL_DISK_CACHE = _bounded_setting(
-                        "cache_ttl_disk_cache",
-                        TTL_DISK_CACHE,
-                        integer=True,
-                        minimum=0,
-                        maximum=31_536_000,
-                    )
-                    SSH_TIMEOUT = _bounded_setting("ssh_timeout", SSH_TIMEOUT, minimum=1, maximum=600)
-                    SSH_COMMAND_TIMEOUT = _bounded_setting(
-                        "ssh_command_timeout", SSH_COMMAND_TIMEOUT, minimum=1, maximum=3600
-                    )
-                    VNC_CAPTURE_TIMEOUT = _bounded_setting(
-                        "vnc_capture_timeout", VNC_CAPTURE_TIMEOUT, minimum=1, maximum=300
-                    )
-                    SOL_CONNECT_TIMEOUT = _bounded_setting(
-                        "sol_connect_timeout", SOL_CONNECT_TIMEOUT, minimum=1, maximum=300
-                    )
-                    CONSOLE_COMMAND_TIMEOUT = _bounded_setting(
-                        "console_command_timeout", CONSOLE_COMMAND_TIMEOUT, minimum=1, maximum=3600
-                    )
-                    CONSOLE_BATCH_CONCURRENCY = _bounded_setting(
-                        "console_batch_concurrency",
-                        CONSOLE_BATCH_CONCURRENCY,
-                        integer=True,
-                        minimum=1,
-                        maximum=12,
-                    )
-                    CONSOLE_OUTPUT_LIMIT = _bounded_setting(
-                        "console_output_limit",
-                        CONSOLE_OUTPUT_LIMIT,
-                        integer=True,
-                        minimum=1024,
-                        maximum=1_048_576,
-                    )
-                    CONSOLE_SESSION_TTL = _bounded_setting(
-                        "console_session_ttl",
-                        CONSOLE_SESSION_TTL,
-                        integer=True,
-                        minimum=10,
-                        maximum=86_400,
-                    )
-                    OPERATION_TTL = _bounded_setting(
-                        "operation_ttl",
-                        OPERATION_TTL,
-                        integer=True,
-                        minimum=60,
-                        maximum=86_400,
-                    )
-                    NETWORK_COLLECTION_CONCURRENCY = _bounded_setting(
-                        "network_collection_concurrency",
-                        NETWORK_COLLECTION_CONCURRENCY,
-                        integer=True,
-                        minimum=1,
-                        maximum=12,
-                    )
-                    BATCH_CONCURRENCY = _bounded_setting(
-                        "batch_concurrency",
-                        BATCH_CONCURRENCY,
-                        integer=True,
-                        minimum=1,
-                        maximum=12,
-                    )
-                    HARDWARE_INVENTORY_DIR = os.getenv("HARDWARE_INVENTORY_DIR") or SETTINGS.get(
-                        "hardware_inventory_dir", HARDWARE_INVENTORY_DIR
-                    )
-                    HARDWARE_INVENTORY_TIMEOUT = _bounded_setting(
-                        "hardware_inventory_timeout",
-                        HARDWARE_INVENTORY_TIMEOUT,
-                        minimum=1,
-                        maximum=3600,
-                    )
-                    HARDWARE_INVENTORY_POLL_INTERVAL = _bounded_setting(
-                        "hardware_inventory_poll_interval",
-                        HARDWARE_INVENTORY_POLL_INTERVAL,
-                        minimum=0.1,
-                        maximum=30,
-                    )
-                    HARDWARE_INVENTORY_MAX_BYTES = _bounded_setting(
-                        "hardware_inventory_max_bytes",
-                        HARDWARE_INVENTORY_MAX_BYTES,
-                        integer=True,
-                        minimum=1024,
-                        maximum=268_435_456,
-                    )
+    if not SETTINGS and os.path.exists(settings_file):
+        with open(settings_file, "r") as f:
+            raw_settings = yaml.safe_load(f) or {}
+            if isinstance(raw_settings, dict):
+                SETTINGS.update(raw_settings)
+                DEFAULT_TIMEOUT = _bounded_setting("default_timeout", DEFAULT_TIMEOUT, minimum=1, maximum=3600)
+                MAX_RETRIES = _bounded_setting("max_retries", MAX_RETRIES, integer=True, minimum=1, maximum=10)
+                BACKOFF_FACTOR = _bounded_setting("backoff_factor", BACKOFF_FACTOR, minimum=0, maximum=60)
+                TTL_FIRMWARE_INVENTORY = _bounded_setting(
+                    "cache_ttl_firmware_inventory",
+                    TTL_FIRMWARE_INVENTORY,
+                    integer=True,
+                    minimum=0,
+                    maximum=31_536_000,
+                )
+                TTL_HARDWARE_OVERVIEW = _bounded_setting(
+                    "cache_ttl_hardware_overview",
+                    TTL_HARDWARE_OVERVIEW,
+                    integer=True,
+                    minimum=0,
+                    maximum=31_536_000,
+                )
+                TTL_SYSTEM_INFO = _bounded_setting(
+                    "cache_ttl_system_info",
+                    TTL_SYSTEM_INFO,
+                    integer=True,
+                    minimum=0,
+                    maximum=31_536_000,
+                )
+                TTL_DISK_CACHE = _bounded_setting(
+                    "cache_ttl_disk_cache",
+                    TTL_DISK_CACHE,
+                    integer=True,
+                    minimum=0,
+                    maximum=31_536_000,
+                )
+                SSH_TIMEOUT = _bounded_setting("ssh_timeout", SSH_TIMEOUT, minimum=1, maximum=600)
+                SSH_COMMAND_TIMEOUT = _bounded_setting(
+                    "ssh_command_timeout", SSH_COMMAND_TIMEOUT, minimum=1, maximum=3600
+                )
+                VNC_CAPTURE_TIMEOUT = _bounded_setting(
+                    "vnc_capture_timeout", VNC_CAPTURE_TIMEOUT, minimum=1, maximum=300
+                )
+                SOL_CONNECT_TIMEOUT = _bounded_setting(
+                    "sol_connect_timeout", SOL_CONNECT_TIMEOUT, minimum=1, maximum=300
+                )
+                CONSOLE_COMMAND_TIMEOUT = _bounded_setting(
+                    "console_command_timeout", CONSOLE_COMMAND_TIMEOUT, minimum=1, maximum=3600
+                )
+                CONSOLE_BATCH_CONCURRENCY = _bounded_setting(
+                    "console_batch_concurrency",
+                    CONSOLE_BATCH_CONCURRENCY,
+                    integer=True,
+                    minimum=1,
+                    maximum=12,
+                )
+                CONSOLE_OUTPUT_LIMIT = _bounded_setting(
+                    "console_output_limit",
+                    CONSOLE_OUTPUT_LIMIT,
+                    integer=True,
+                    minimum=1024,
+                    maximum=1_048_576,
+                )
+                CONSOLE_SESSION_TTL = _bounded_setting(
+                    "console_session_ttl",
+                    CONSOLE_SESSION_TTL,
+                    integer=True,
+                    minimum=10,
+                    maximum=86_400,
+                )
+                OPERATION_TTL = _bounded_setting(
+                    "operation_ttl",
+                    OPERATION_TTL,
+                    integer=True,
+                    minimum=60,
+                    maximum=86_400,
+                )
+                NETWORK_COLLECTION_CONCURRENCY = _bounded_setting(
+                    "network_collection_concurrency",
+                    NETWORK_COLLECTION_CONCURRENCY,
+                    integer=True,
+                    minimum=1,
+                    maximum=12,
+                )
+                BATCH_CONCURRENCY = _bounded_setting(
+                    "batch_concurrency",
+                    BATCH_CONCURRENCY,
+                    integer=True,
+                    minimum=1,
+                    maximum=12,
+                )
+                HARDWARE_INVENTORY_DIR = os.getenv("HARDWARE_INVENTORY_DIR") or SETTINGS.get(
+                    "hardware_inventory_dir", HARDWARE_INVENTORY_DIR
+                )
+                HARDWARE_INVENTORY_TIMEOUT = _bounded_setting(
+                    "hardware_inventory_timeout",
+                    HARDWARE_INVENTORY_TIMEOUT,
+                    minimum=1,
+                    maximum=3600,
+                )
+                HARDWARE_INVENTORY_POLL_INTERVAL = _bounded_setting(
+                    "hardware_inventory_poll_interval",
+                    HARDWARE_INVENTORY_POLL_INTERVAL,
+                    minimum=0.1,
+                    maximum=30,
+                )
+                HARDWARE_INVENTORY_MAX_BYTES = _bounded_setting(
+                    "hardware_inventory_max_bytes",
+                    HARDWARE_INVENTORY_MAX_BYTES,
+                    integer=True,
+                    minimum=1024,
+                    maximum=268_435_456,
+                )
 
     # Load CONFIG if empty
     if not CONFIG:
@@ -357,7 +355,7 @@ def _load_config():
                     logger.warning("Invalid format in %s: expected a mapping for isos", isos_file)
 
 
-def normalize_vendor(value: Any) -> str:
+def normalize_vendor(value: object) -> str:
     """Return the canonical vendor name used by handlers and console transports."""
     normalized = str(value or "").strip().lower()
     aliases = {
@@ -370,7 +368,7 @@ def normalize_vendor(value: Any) -> str:
     return aliases.get(normalized, normalized)
 
 
-def get_server_credentials(server_id: str) -> Optional[Dict[str, Any]]:
+def get_server_credentials(server_id: str) -> dict[str, Any] | None:
     """Resolve credentials without exposing them in a tool result.
 
     A host may reference ``credential_profile`` in its non-secret configuration.
@@ -381,7 +379,7 @@ def get_server_credentials(server_id: str) -> Optional[Dict[str, Any]]:
     server = CONFIG.get(server_id)
     if not isinstance(server, dict):
         return None
-    resolved: Dict[str, Any] = {}
+    resolved: dict[str, Any] = {}
     profile_name = server.get("credential_profile")
     profiles = SECRETS.get("profiles", {})
     if profile_name and isinstance(profiles, dict):
@@ -394,7 +392,7 @@ def get_server_credentials(server_id: str) -> Optional[Dict[str, Any]]:
     return resolved or None
 
 
-def _flatten_dict(data, prefix: str = "") -> Dict[str, str]:
+def _flatten_dict(data: object, prefix: str = "") -> dict[str, str]:
     """Recursively flatten a nested dict/list structure into key-value pairs.
 
     Keys are formed by joining nested keys with underscores.
@@ -409,9 +407,8 @@ def _flatten_dict(data, prefix: str = "") -> Dict[str, str]:
     elif isinstance(data, list):
         for item in data:
             result.update(_flatten_dict(item, prefix))
-    elif isinstance(data, str):
+    elif isinstance(data, str) and prefix:
         # Leaf value - this is the URL
-        if prefix:
-            result[prefix] = data
+        result[prefix] = data
 
     return result

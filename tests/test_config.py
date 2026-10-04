@@ -1,25 +1,26 @@
 """Tests for config.py - logging, _normalize_boot_target, _flatten_dict, _load_config."""
 
-import logging
+from __future__ import annotations
 
+import logging
 from pathlib import Path
 
-import yaml
 import pytest
+import yaml
 
-from config import _normalize_boot_target, _flatten_dict, _load_config
+from config import _flatten_dict, _load_config, _normalize_boot_target
 
 
 class TestRequestLogging:
-    def test_default_request_log_path(self):
+    def test_default_request_log_path(self) -> None:
         import config
 
         assert config.DEFAULT_REQUEST_LOG_PATH == "/tmp/baremetal-mcp-requests.log"
 
-    def test_file_error_falls_back_to_stderr(self, monkeypatch):
+    def test_file_error_falls_back_to_stderr(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
-        def raise_file_error(*args, **kwargs):
+        def raise_file_error(*args: object, **kwargs: object) -> None:
             raise OSError("read-only filesystem")
 
         monkeypatch.setattr(config, "RotatingFileHandler", raise_file_error)
@@ -30,10 +31,10 @@ class TestRequestLogging:
 
 
 class TestNormalizeBootTarget:
-    def test_empty_string(self):
+    def test_empty_string(self) -> None:
         assert _normalize_boot_target("") is None
 
-    def test_none_value(self):
+    def test_none_value(self) -> None:
         assert _normalize_boot_target(None) is None
 
     @pytest.mark.parametrize(
@@ -52,48 +53,48 @@ class TestNormalizeBootTarget:
             ("usb", "Usb"),
         ],
     )
-    def test_known_alias(self, alias, expected):
+    def test_known_alias(self, alias: str, expected: object) -> None:
         assert _normalize_boot_target(alias) == expected
 
-    def test_alias_case_insensitive(self):
+    def test_alias_case_insensitive(self) -> None:
         assert _normalize_boot_target("PXE") == "Pxe"
         assert _normalize_boot_target("DVD") == "Cd"
 
-    def test_exact_redfish_enum_uppercase_first(self):
+    def test_exact_redfish_enum_uppercase_first(self) -> None:
         assert _normalize_boot_target("Cd") == "Cd"
         assert _normalize_boot_target("Pxe") == "Pxe"
         assert _normalize_boot_target("BiosSetup") == "BiosSetup"
 
-    def test_unknown_lowercase_returns_none(self):
+    def test_unknown_lowercase_returns_none(self) -> None:
         assert _normalize_boot_target("foobar") is None
 
-    def test_whitespace_stripped(self):
+    def test_whitespace_stripped(self) -> None:
         assert _normalize_boot_target("  pxe  ") == "Pxe"
 
 
 class TestFlattenDict:
-    def test_empty_dict(self):
+    def test_empty_dict(self) -> None:
         assert _flatten_dict({}) == {}
 
-    def test_nested_dicts_with_string_leaves(self):
+    def test_nested_dicts_with_string_leaves(self) -> None:
         data = {"a": {"b": "http://url1", "c": "http://url2"}}
         result = _flatten_dict(data)
         assert result == {"a_b": "http://url1", "a_c": "http://url2"}
 
-    def test_list_of_dicts(self):
+    def test_list_of_dicts(self) -> None:
         data = [{"model_750": {"idrac": "http://idrac.exe"}}]
         result = _flatten_dict(data)
         assert result == {"model_750_idrac": "http://idrac.exe"}
 
-    def test_string_with_prefix(self):
+    def test_string_with_prefix(self) -> None:
         result = _flatten_dict("http://url", prefix="dell_bios")
         assert result == {"dell_bios": "http://url"}
 
-    def test_string_without_prefix(self):
+    def test_string_without_prefix(self) -> None:
         result = _flatten_dict("http://url")
         assert result == {}
 
-    def test_mixed_nesting_like_isos(self):
+    def test_mixed_nesting_like_isos(self) -> None:
         data = {
             "dell": [
                 {
@@ -109,13 +110,13 @@ class TestFlattenDict:
         assert result["dell_model_750_idrac_version_7"] == "http://fw/idrac7.exe"
         assert result["dell_model_750_bios_version_1"] == "http://fw/bios1.exe"
 
-    def test_deeply_nested(self):
+    def test_deeply_nested(self) -> None:
         data = {"a": {"b": {"c": {"d": "leaf"}}}}
         assert _flatten_dict(data) == {"a_b_c_d": "leaf"}
 
 
 class TestLoadConfig:
-    def test_example_files_define_all_connection_values(self, monkeypatch, tmp_path):
+    def test_example_files_define_all_connection_values(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         import config
 
         repository = Path(__file__).resolve().parents[1]
@@ -151,7 +152,7 @@ class TestLoadConfig:
         assert config.CONFIG["dell-db-02"]["vnc_port"] == 5901
         assert config.get_server_credentials("dell-db-02")["vnc_password"]
 
-    def test_loads_all_files(self, tmp_path, monkeypatch):
+    def test_loads_all_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         servers_file = tmp_path / "servers.yaml"
         secrets_file = tmp_path / "secrets.yaml"
         isos_file = tmp_path / "isos.yaml"
@@ -198,7 +199,7 @@ class TestLoadConfig:
         assert config.DEFAULT_TIMEOUT == 120
         assert config.MAX_RETRIES == 5
 
-    def test_missing_config_file(self, tmp_path, monkeypatch):
+    def test_missing_config_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         monkeypatch.setattr(config, "CONFIG_FILE", str(tmp_path / "nonexistent.yaml"))
@@ -210,7 +211,7 @@ class TestLoadConfig:
         assert config.CONFIG == {}
         assert config.SECRETS == {}
 
-    def test_skip_loading_when_already_populated(self, monkeypatch):
+    def test_skip_loading_when_already_populated(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         config.CONFIG["existing"] = {"bmc_ip": "1.2.3.4"}
@@ -221,7 +222,7 @@ class TestLoadConfig:
         _load_config()
         assert "existing" in config.CONFIG
 
-    def test_config_without_servers_key(self, tmp_path, monkeypatch):
+    def test_config_without_servers_key(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         servers_file = tmp_path / "servers.yaml"
         servers_file.write_text(yaml.dump({"srv1": {"bmc_ip": "10.0.0.1"}}))
 
@@ -235,7 +236,7 @@ class TestLoadConfig:
         _load_config()
         assert "srv1" in config.CONFIG
 
-    def test_invalid_config_format(self, tmp_path, monkeypatch):
+    def test_invalid_config_format(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         servers_file = tmp_path / "servers.yaml"
         servers_file.write_text(yaml.dump({"servers": ["just", "a", "list"]}))
 
@@ -249,7 +250,7 @@ class TestLoadConfig:
         _load_config()
         assert config.CONFIG == {}
 
-    def test_settings_override_defaults(self, tmp_path, monkeypatch):
+    def test_settings_override_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         settings_file = tmp_path / "settings.yaml"
         settings_file.write_text(
             yaml.dump(
@@ -298,7 +299,7 @@ class TestLoadConfig:
         assert config.HARDWARE_INVENTORY_MAX_BYTES == 1048576
         assert config.OPERATION_TTL == 7200
 
-    def test_invalid_numeric_settings_keep_safe_defaults(self, tmp_path, monkeypatch):
+    def test_invalid_numeric_settings_keep_safe_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         settings_file = tmp_path / "settings.yaml"
@@ -334,7 +335,7 @@ class TestLoadConfig:
         assert config.HARDWARE_INVENTORY_TIMEOUT == 300
         assert config.HARDWARE_INVENTORY_MAX_BYTES == 52_428_800
 
-    def test_vendor_alias_is_normalized_while_loading(self, tmp_path, monkeypatch):
+    def test_vendor_alias_is_normalized_while_loading(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         servers_file = tmp_path / "servers.yaml"

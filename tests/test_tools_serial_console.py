@@ -1,7 +1,12 @@
 """Tests for guarded Dell SOL and HPE iLO VSP command execution."""
 
+from __future__ import annotations
+
 import asyncio
 import re
+from collections.abc import Callable, Iterator
+from types import ModuleType
+from typing import Any
 from unittest.mock import MagicMock
 
 import paramiko
@@ -9,12 +14,12 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _isolate_serial_console(monkeypatch):
+def _isolate_serial_console(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     import tools.serial_console as serial
 
     serial._SERIAL_LOCKS.clear()
 
-    async def run_direct(function, *args):
+    async def run_direct(function: Callable[..., object], *args: object) -> object:
         return function(*args)
 
     monkeypatch.setattr(serial, "_run_in_thread", run_direct)
@@ -25,7 +30,7 @@ def _isolate_serial_console(monkeypatch):
     serial._SERIAL_LOCKS.clear()
 
 
-def _configure(config, server_id="host1", vendor="dell"):
+def _configure(config: ModuleType, server_id: str = "host1", vendor: str = "dell") -> None:
     config.CONFIG[server_id] = {
         "bmc_ip": "192.0.2.10",
         "serial_console": {"port": 22, "transport": "auto"},
@@ -38,7 +43,13 @@ def _configure(config, server_id="host1", vendor="dell"):
 
 
 class ScriptedChannel:
-    def __init__(self, outcomes=None, probe=True, login=False, fail_after_command=False):
+    def __init__(
+        self,
+        outcomes: list[tuple[str, int | None]] | None = None,
+        probe: bool = True,
+        login: bool = False,
+        fail_after_command: bool = False,
+    ) -> None:
         self.outcomes = list(outcomes or [("output", 0)])
         self.probe = probe
         self.login = login
@@ -48,7 +59,7 @@ class ScriptedChannel:
         self.closed = False
         self.command_sends = 0
 
-    def sendall(self, value):
+    def sendall(self, value: str) -> None:
         self.sent.append(value)
         if value in {"console com2\r", "VSP\r"}:
             self.received.append(b"fedora login: " if self.login else b"root@fedora:~# ")
@@ -65,31 +76,31 @@ class ScriptedChannel:
                 response = f"\r\n__BM_BEGIN_{nonce}__\r\n{output}" f"\r\n__BM_END_{nonce}__ rc={rc}\r\nroot@fedora:~# "
             self.received.append(response.encode())
 
-    def recv_ready(self):
+    def recv_ready(self) -> bool:
         if self.fail_after_command and self.command_sends:
             raise OSError("simulated console read failure")
         return bool(self.received)
 
-    def recv(self, _size):
+    def recv(self, _size: int) -> bytes:
         return self.received.pop(0)
 
-    def close(self):
+    def close(self) -> None:
         self.closed = True
 
 
 class FakeSshClient:
-    def __init__(self, channel):
+    def __init__(self, channel: ScriptedChannel) -> None:
         self.channel = channel
         self.closed = False
 
-    def invoke_shell(self, **_kwargs):
+    def invoke_shell(self, **_kwargs: object) -> ScriptedChannel:
         return self.channel
 
-    def close(self):
+    def close(self) -> None:
         self.closed = True
 
 
-def _install_fake_connection(monkeypatch, channel):
+def _install_fake_connection(monkeypatch: pytest.MonkeyPatch, channel: ScriptedChannel) -> FakeSshClient:
     import tools.serial_console as serial
 
     client = FakeSshClient(channel)
@@ -98,7 +109,7 @@ def _install_fake_connection(monkeypatch, channel):
 
 
 class TestSerialCommand:
-    def test_requires_explicit_serial_port(self):
+    def test_requires_explicit_serial_port(self) -> None:
         import config
         import tools.serial_console as serial
 
@@ -110,7 +121,7 @@ class TestSerialCommand:
         assert settings is None
         assert "serial_console.port" in error["message"]
 
-    async def test_dell_success_uses_probe_markers_and_detaches(self, monkeypatch):
+    async def test_dell_success_uses_probe_markers_and_detaches(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
         import tools.serial_console as serial
 
@@ -135,7 +146,7 @@ class TestSerialCommand:
         assert channel.closed is True
         assert client.closed is True
 
-    async def test_hpe_uses_vsp_attach_and_detach(self, monkeypatch):
+    async def test_hpe_uses_vsp_attach_and_detach(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
         import tools.serial_console as serial
 
@@ -150,7 +161,7 @@ class TestSerialCommand:
         assert channel.sent[0] == "VSP\r"
         assert channel.sent[-1] == "\x1b("
 
-    async def test_prompt_probe_failure_does_not_send_requested_command(self, monkeypatch):
+    async def test_prompt_probe_failure_does_not_send_requested_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
         import tools.serial_console as serial
 
@@ -167,7 +178,7 @@ class TestSerialCommand:
         assert not any("systemctl restart" in value for value in channel.sent)
         assert channel.sent[-1] == "\x1c"
 
-    async def test_login_prompt_blocks_probe_and_command(self, monkeypatch):
+    async def test_login_prompt_blocks_probe_and_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
         import tools.serial_console as serial
 
@@ -183,7 +194,7 @@ class TestSerialCommand:
         assert "login" in result["message"]
         assert not any("__BM_PROBE" in value for value in channel.sent)
 
-    async def test_sent_without_completion_is_unknown_and_not_retried(self, monkeypatch):
+    async def test_sent_without_completion_is_unknown_and_not_retried(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
         import tools.serial_console as serial
 
@@ -203,7 +214,7 @@ class TestSerialCommand:
         assert channel.command_sends == 1
         assert channel.sent[-1] == "\x1c"
 
-    async def test_read_failure_after_send_is_unknown_and_detaches(self, monkeypatch):
+    async def test_read_failure_after_send_is_unknown_and_detaches(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
         import tools.serial_console as serial
 
@@ -222,7 +233,7 @@ class TestSerialCommand:
         assert channel.sent[-1] == "\x1c"
         assert channel.closed is True
 
-    async def test_nonzero_exit_is_confirmed(self, monkeypatch):
+    async def test_nonzero_exit_is_confirmed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
         import tools.serial_console as serial
 
@@ -237,7 +248,7 @@ class TestSerialCommand:
         assert result["exit_code"] == 7
         assert result["output"] == "failed"
 
-    async def test_output_is_bounded_and_reports_truncation(self, monkeypatch):
+    async def test_output_is_bounded_and_reports_truncation(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
         import tools.serial_console as serial
 
@@ -253,7 +264,7 @@ class TestSerialCommand:
         assert 0 < len(result["output"]) <= 1024
         assert result["output_chars_total"] >= 4096
 
-    async def test_multicommand_session_stops_after_unknown_result(self, monkeypatch):
+    async def test_multicommand_session_stops_after_unknown_result(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
         import tools.serial_console as serial
 
@@ -277,7 +288,7 @@ class TestSerialCommand:
         assert result["sent_unconfirmed"] is True
         assert channel.command_sends == 2
 
-    async def test_validation_happens_before_connect(self, monkeypatch):
+    async def test_validation_happens_before_connect(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
         import tools.serial_console as serial
 
@@ -292,7 +303,7 @@ class TestSerialCommand:
         assert result["command_sent"] is False
         connect.assert_not_called()
 
-    async def test_unknown_server_is_structured_and_does_not_connect(self, monkeypatch):
+    async def test_unknown_server_is_structured_and_does_not_connect(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import tools.serial_console as serial
 
         connect = MagicMock()
@@ -308,7 +319,7 @@ class TestSerialCommand:
 
 
 class TestAuthentication:
-    def test_keyboard_interactive_fallback(self, monkeypatch):
+    def test_keyboard_interactive_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import tools.serial_console as serial
 
         ssh = MagicMock()
@@ -320,7 +331,7 @@ class TestAuthentication:
         transport = MagicMock()
         answers = {}
 
-        def auth_interactive(username, callback):
+        def auth_interactive(username: str, callback: Callable[..., object]) -> None:
             answers["username"] = username
             answers["values"] = callback(
                 "",
@@ -352,10 +363,10 @@ class TestAuthentication:
 
 
 class TestBatchTool:
-    async def test_preserves_first_seen_order_and_deduplicates(self, monkeypatch):
+    async def test_preserves_first_seen_order_and_deduplicates(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import tools.serial_console as serial
 
-        async def fake_run(server_id, _command, _timeout):
+        async def fake_run(server_id: str, _command: str, _timeout: float) -> dict[str, Any]:
             return {
                 "server_id": server_id,
                 "status": "success",
@@ -387,13 +398,13 @@ class TestBatchTool:
         assert result["unique_count"] == 2
         assert result["duplicates_removed"] == 1
 
-    async def test_same_host_calls_are_serialized(self, monkeypatch):
+    async def test_same_host_calls_are_serialized(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import tools.serial_console as serial
 
         active = 0
         maximum = 0
 
-        def fake_sync(server_id, commands, _timeout):
+        def fake_sync(server_id: str, commands: list[str], _timeout: float) -> dict[str, Any]:
             item = {
                 "label": commands[0][0],
                 "server_id": server_id,
@@ -416,7 +427,7 @@ class TestBatchTool:
                 phase="complete",
             )
 
-        async def tracked_runner(function, *args):
+        async def tracked_runner(function: Callable[..., object], *args: object) -> object:
             nonlocal active, maximum
             active += 1
             maximum = max(maximum, active)
@@ -434,7 +445,7 @@ class TestBatchTool:
 
         assert maximum == 1
 
-    async def test_batch_size_and_concurrency_are_bounded(self):
+    async def test_batch_size_and_concurrency_are_bounded(self) -> None:
         import tools.serial_console as serial
 
         too_many = await serial.run_console_command_batch(
@@ -452,7 +463,7 @@ class TestBatchTool:
         assert bad_concurrency["status"] == "error"
         assert "between 1 and 12" in bad_concurrency["message"]
 
-    async def test_defaults_to_no_connection_dry_run(self, monkeypatch):
+    async def test_defaults_to_no_connection_dry_run(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
         import tools.serial_console as serial
 
@@ -468,7 +479,7 @@ class TestBatchTool:
         assert result["results"][0]["command_sent"] is False
         execute.assert_not_called()
 
-    async def test_execution_requires_exact_command_confirmation(self, monkeypatch):
+    async def test_execution_requires_exact_command_confirmation(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import tools.serial_console as serial
 
         execute = MagicMock()

@@ -1,6 +1,10 @@
 """Shared fixtures and real-data constants for baremetal-mcp tests."""
 
+from __future__ import annotations
+
 import json
+from collections.abc import Callable, Iterator
+from typing import Any
 from unittest.mock import MagicMock
 
 import httpx
@@ -416,7 +420,9 @@ MOCK_ISOS_FLAT = {
 # ---------------------------------------------------------------------------
 
 
-def make_mock_response(status_code=200, json_data=None, content=b"", headers=None):
+def make_mock_response(
+    status_code: int = 200, json_data: object = None, content: bytes = b"", headers: dict[str, str] | None = None
+) -> httpx.Response:
     """Build a fake httpx.Response."""
     if json_data is not None:
         body = json.dumps(json_data).encode()
@@ -441,7 +447,7 @@ def make_mock_response(status_code=200, json_data=None, content=b"", headers=Non
 
 
 @pytest.fixture(autouse=True)
-def _isolate_globals():
+def _isolate_globals() -> Iterator[None]:
     """Reset all module-level mutable globals between tests."""
     import config
     import helpers
@@ -478,7 +484,9 @@ def _isolate_globals():
 
 
 @pytest.fixture
-def mock_redfish_client(monkeypatch):
+def mock_redfish_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Callable[[dict[str, httpx.Response | Callable[..., httpx.Response]]], MagicMock]:
     """Return a setup function that patches httpx with a URL-to-response routing map.
 
     Usage:
@@ -488,8 +496,8 @@ def mock_redfish_client(monkeypatch):
         })
     """
 
-    def _setup(route_map: dict):
-        def _resolve(method, url, **kwargs):
+    def _setup(route_map: dict[str, httpx.Response | Callable[..., httpx.Response]]) -> MagicMock:
+        def _resolve(method: str, url: str | httpx.URL, **kwargs: object) -> httpx.Response:
             url_str = str(url)
             for pattern in sorted(route_map.keys(), key=len, reverse=True):
                 if pattern in url_str:
@@ -501,10 +509,10 @@ def mock_redfish_client(monkeypatch):
 
         mock_client = MagicMock(spec=httpx.AsyncClient)
 
-        async def _async_request(method, url, **kwargs):
+        async def _async_request(method: str, url: str | httpx.URL, **kwargs: object) -> httpx.Response:
             return _resolve(method, url, **kwargs)
 
-        async def _async_get(url, **kwargs):
+        async def _async_get(url: str | httpx.URL, **kwargs: object) -> httpx.Response:
             return _resolve("GET", url, **kwargs)
 
         mock_client.request = _async_request
@@ -522,7 +530,7 @@ def mock_redfish_client(monkeypatch):
 
 
 @pytest.fixture
-def setup_dell_config():
+def setup_dell_config() -> None:
     """Populate CONFIG/SECRETS for Dell R750 (host1)."""
     import config
 
@@ -531,7 +539,7 @@ def setup_dell_config():
 
 
 @pytest.fixture
-def setup_hpe_config():
+def setup_hpe_config() -> None:
     """Populate CONFIG/SECRETS for HPE DL380 (host100)."""
     import config
 
@@ -540,7 +548,7 @@ def setup_hpe_config():
 
 
 @pytest.fixture
-def setup_dell_idrac10_config():
+def setup_dell_idrac10_config() -> None:
     """Populate CONFIG/SECRETS for Dell R7725 iDRAC-10 (host200)."""
     import config
 
@@ -549,7 +557,7 @@ def setup_dell_idrac10_config():
 
 
 @pytest.fixture
-def setup_supermicro_config():
+def setup_supermicro_config() -> None:
     """Populate CONFIG/SECRETS for Supermicro (host500)."""
     import config
 
@@ -558,7 +566,7 @@ def setup_supermicro_config():
 
 
 @pytest.fixture
-def setup_all_configs():
+def setup_all_configs() -> None:
     """Populate CONFIG/SECRETS for all four server types."""
     import config
 
@@ -570,7 +578,7 @@ def setup_all_configs():
 
 
 @pytest.fixture
-def dell_routes():
+def dell_routes() -> dict[str, Any]:
     """URL route map for Dell R750 (host1)."""
     return {
         "/redfish/v1/Systems/System.Embedded.1": make_mock_response(200, DELL_R750_SYSTEM),
@@ -586,7 +594,7 @@ def dell_routes():
 
 
 @pytest.fixture
-def hpe_routes():
+def hpe_routes() -> dict[str, Any]:
     """URL route map for HPE DL380 (host100)."""
     return {
         "/redfish/v1/Systems/1": make_mock_response(200, HPE_DL380_SYSTEM),
@@ -603,7 +611,7 @@ def hpe_routes():
 
 
 @pytest.fixture
-def supermicro_routes():
+def supermicro_routes() -> dict[str, Any]:
     """URL route map for Supermicro (host500)."""
     return {
         "/redfish/v1/Systems/1/Storage": make_mock_response(200, SUPERMICRO_STORAGE_EMPTY),

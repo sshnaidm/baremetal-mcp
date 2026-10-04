@@ -1,12 +1,14 @@
 """Tests for sanitized host-operation preflight."""
 
+from __future__ import annotations
+
 from fastmcp import Client
 
 import config
 from tools.configuration import validate_host_configuration
 
 
-async def test_validate_host_configuration_never_returns_secret_values():
+async def test_validate_host_configuration_never_returns_secret_values() -> None:
     config.CONFIG.update(
         {
             "dell1": {
@@ -45,7 +47,7 @@ async def test_validate_host_configuration_never_returns_secret_values():
     assert "other-secret-value" not in repr(result)
 
 
-async def test_validate_host_configuration_reports_per_host_failures():
+async def test_validate_host_configuration_reports_per_host_failures() -> None:
     config.CONFIG.update(
         {
             "broken": {
@@ -76,7 +78,7 @@ async def test_validate_host_configuration_reports_per_host_failures():
     assert result["results"][1]["vendor"] == "hpe"
 
 
-async def test_serial_preflight_rejects_supermicro_and_custom_attach_commands():
+async def test_serial_preflight_rejects_supermicro_and_custom_attach_commands() -> None:
     config.CONFIG.update(
         {
             "supermicro1": {
@@ -117,7 +119,7 @@ async def test_serial_preflight_rejects_supermicro_and_custom_attach_commands():
     assert any("attach_command" in error for error in result["results"][1]["errors"])
 
 
-async def test_hardware_xml_preflight_rejects_non_dell_vendor():
+async def test_hardware_xml_preflight_rejects_non_dell_vendor() -> None:
     config.CONFIG["hpe-xml"] = {
         "bmc_ip": "10.0.0.5",
         "redfish": {"port": 443},
@@ -134,7 +136,7 @@ async def test_hardware_xml_preflight_rejects_non_dell_vendor():
     assert any("unsupported" in error for error in result["results"][0]["errors"])
 
 
-async def test_configuration_tool_registration():
+async def test_configuration_tool_registration() -> None:
     async with Client(config.mcp) as client:
         names = {tool.name for tool in await client.list_tools()}
     assert "validate_host_configuration" in names

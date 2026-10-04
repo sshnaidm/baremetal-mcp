@@ -1,9 +1,13 @@
 """Tests for background fleet operations and retry safety."""
 
-import asyncio
+from __future__ import annotations
 
-from fastmcp import Client
+import asyncio
+from collections.abc import Iterator
+from typing import Any
+
 import pytest
+from fastmcp import Client
 
 import config
 from tools.operations import (
@@ -16,7 +20,7 @@ from tools.operations import (
 
 
 @pytest.fixture(autouse=True)
-def _clear_operations():
+def _clear_operations() -> Iterator[None]:
     _OPERATIONS.clear()
     yield
     for record in _OPERATIONS.values():
@@ -26,7 +30,7 @@ def _clear_operations():
     _OPERATIONS.clear()
 
 
-async def _completed(operation_id):
+async def _completed(operation_id: str) -> dict[str, Any]:
     for _ in range(100):
         value = await get_operation(operation_id)
         if value.get("state") in {"completed", "failed"}:
@@ -35,10 +39,12 @@ async def _completed(operation_id):
     raise AssertionError("background operation did not complete")
 
 
-async def test_console_background_requires_exact_confirmation_and_hides_command(monkeypatch):
+async def test_console_background_requires_exact_confirmation_and_hides_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls = []
 
-    async def fake_batch(server_ids, command, **kwargs):
+    async def fake_batch(server_ids: list[str], command: str, **kwargs: object) -> dict[str, Any]:
         calls.append((server_ids, command, kwargs))
         if kwargs.get("dry_run"):
             return {
@@ -118,13 +124,13 @@ async def test_console_background_requires_exact_confirmation_and_hides_command(
     ],
 )
 async def test_console_background_aggregates_remote_outcome(
-    monkeypatch,
-    host_result,
-    remote_state,
-    outcome_unknown,
-    retry_safe,
-):
-    async def fake_batch(server_ids, command, **kwargs):
+    monkeypatch: pytest.MonkeyPatch,
+    host_result: dict[str, Any],
+    remote_state: str,
+    outcome_unknown: bool,
+    retry_safe: bool,
+) -> None:
+    async def fake_batch(server_ids: list[str], command: str, **kwargs: object) -> dict[str, Any]:
         if kwargs.get("dry_run"):
             return {
                 "status": "success",
@@ -144,10 +150,10 @@ async def test_console_background_aggregates_remote_outcome(
     assert done["retry_safe"] is retry_safe
 
 
-async def test_retry_excludes_sent_or_ambiguous_hosts(monkeypatch):
+async def test_retry_excludes_sent_or_ambiguous_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
     attempts = 0
 
-    async def fake_batch(server_ids, command, **kwargs):
+    async def fake_batch(server_ids: list[str], command: str, **kwargs: object) -> dict[str, Any]:
         nonlocal attempts
         if kwargs.get("dry_run"):
             return {
@@ -193,8 +199,8 @@ async def test_retry_excludes_sent_or_ambiguous_hosts(monkeypatch):
     await _completed(retried["operation_id"])
 
 
-async def test_network_collection_runs_in_background(monkeypatch):
-    async def fake_collect(**arguments):
+async def test_network_collection_runs_in_background(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_collect(**arguments: object) -> dict[str, Any]:
         assert arguments["save"] is True
         return {"status": "success", "collected": 2, "saved": 2}
 
@@ -204,7 +210,7 @@ async def test_network_collection_runs_in_background(monkeypatch):
     assert done["result"]["saved"] == 2
 
 
-async def test_operation_tools_are_registered():
+async def test_operation_tools_are_registered() -> None:
     async with Client(config.mcp) as client:
         names = {tool.name for tool in await client.list_tools()}
     assert {
@@ -216,7 +222,7 @@ async def test_operation_tools_are_registered():
     } <= names
 
 
-async def test_unknown_operation_refuses_to_imply_retry_safety():
+async def test_unknown_operation_refuses_to_imply_retry_safety() -> None:
     result = await get_operation("another-process-deadbeef")
 
     assert result["status"] == "error"

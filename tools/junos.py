@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Junos switch tools - query Juniper switches via SSH.
 """
@@ -6,16 +5,15 @@ Junos switch tools - query Juniper switches via SSH.
 import asyncio
 import re
 import time
-from typing import Dict, List
 
 import paramiko
 
 import config as cfg
-from config import mcp, SWITCHES, SECRETS, _load_config
+from config import SECRETS, SWITCHES, _load_config, mcp
 from helpers import _configured_port
 
 
-def _get_command_output(channel, command: str, prompt: str, timeout: int = None) -> str:
+def _get_command_output(channel: paramiko.Channel, command: str, prompt: str, timeout: int | None = None) -> str:
     """Send a command and return cleaned output, waiting for the prompt."""
     channel.send(command + "\n")
 
@@ -37,7 +35,7 @@ def _get_command_output(channel, command: str, prompt: str, timeout: int = None)
     return output
 
 
-def _junos_ssh_commands_sync(switch_id: str, commands: List[str]) -> Dict:
+def _junos_ssh_commands_sync(switch_id: str, commands: list[str]) -> dict:
     """Connect to a Junos switch via SSH and run commands. Blocking."""
     _load_config()
 
@@ -108,13 +106,13 @@ def _junos_ssh_commands_sync(switch_id: str, commands: List[str]) -> Dict:
             client.close()
 
 
-async def _junos_ssh_commands(switch_id: str, commands: List[str]) -> Dict:
+async def _junos_ssh_commands(switch_id: str, commands: list[str]) -> dict:
     """Async wrapper around blocking SSH commands."""
     return await asyncio.to_thread(_junos_ssh_commands_sync, switch_id, commands)
 
 
 @mcp.tool(description="Run a CLI command on a Junos switch via SSH.")
-async def junos_run_command(switch_id: str, command: str) -> Dict:
+async def junos_run_command(switch_id: str, command: str) -> dict:
     """Run any Junos CLI command and return its output.
 
     The command runs in operational mode. Paging is automatically disabled.

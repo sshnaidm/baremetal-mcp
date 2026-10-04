@@ -1,7 +1,11 @@
 """Tests for end-to-end console network collection and identity guards."""
 
-from fastmcp import Client
+from __future__ import annotations
+
+from typing import Any
+
 import pytest
+from fastmcp import Client
 
 import config
 from tools.network_collect import collect_network_inventory
@@ -52,7 +56,7 @@ DEV_PORT: 1
 """
 
 
-def _session(commands, transport="idrac-ssh-sol", status="success"):
+def _session(commands: list[str], transport: str = "idrac-ssh-sol", status: str = "success") -> dict[str, Any]:
     items = []
     for label, output in commands:
         items.append(
@@ -78,7 +82,7 @@ def _session(commands, transport="idrac-ssh-sol", status="success"):
     }
 
 
-def _configure():
+def _configure() -> None:
     config.CONFIG["host1"] = {
         "bmc_ip": "10.0.0.1",
         "vendor": "dell",
@@ -88,11 +92,11 @@ def _configure():
     }
 
 
-async def test_collect_parses_short_probes_verifies_identity_and_saves(monkeypatch):
+async def test_collect_parses_short_probes_verifies_identity_and_saves(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure()
     calls = 0
 
-    async def fake_serial(server_id, commands, timeout):
+    async def fake_serial(server_id: str, commands: list[str], timeout: float) -> dict[str, Any]:
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -122,12 +126,12 @@ async def test_collect_parses_short_probes_verifies_identity_and_saves(monkeypat
             ]
         )
 
-    async def fake_identity(server_id):
+    async def fake_identity(server_id: str) -> dict[str, Any]:
         return {"status": "success", "serial_number": "ABC123", "model": "PowerEdge"}
 
     saved = {}
 
-    async def fake_save(server_id, interfaces, **kwargs):
+    async def fake_save(server_id: str, interfaces: list[dict[str, Any]], **kwargs: object) -> dict[str, Any]:
         saved.update({"server_id": server_id, "interfaces": interfaces, **kwargs})
         return {"status": "success", "server_id": server_id, "path": "/tmp/host1.yaml"}
 
@@ -150,11 +154,11 @@ async def test_collect_parses_short_probes_verifies_identity_and_saves(monkeypat
     assert saved["routes"] == [{"raw": "default via 192.0.2.1 dev eno1"}]
 
 
-async def test_identity_mismatch_is_not_persisted(monkeypatch):
+async def test_identity_mismatch_is_not_persisted(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure()
     calls = 0
 
-    async def fake_serial(*args):
+    async def fake_serial(*args: object) -> dict[str, Any]:
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -176,12 +180,12 @@ async def test_identity_mismatch_is_not_persisted(monkeypatch):
             ]
         )
 
-    async def fail_save(*args, **kwargs):
+    async def fail_save(*args: object, **kwargs: object) -> None:
         raise AssertionError("identity mismatch must not be persisted")
 
     monkeypatch.setattr("tools.network_collect._run_serial_commands", fake_serial)
 
-    async def fake_identity(_server_id):
+    async def fake_identity(_server_id: str) -> dict[str, Any]:
         return {"status": "success", "serial_number": "ABC123"}
 
     monkeypatch.setattr("tools.network_collect._redfish_system_identity", fake_identity)
@@ -195,11 +199,13 @@ async def test_identity_mismatch_is_not_persisted(monkeypatch):
 
 
 @pytest.mark.parametrize("unsafe_state", ["sent_unconfirmed", "partial_text_possible"])
-async def test_uncertain_base_probe_stops_before_second_session(monkeypatch, unsafe_state):
+async def test_uncertain_base_probe_stops_before_second_session(
+    monkeypatch: pytest.MonkeyPatch, unsafe_state: str
+) -> None:
     _configure()
     calls = 0
 
-    async def fake_serial(*_args):
+    async def fake_serial(*_args: object) -> dict[str, Any]:
         nonlocal calls
         calls += 1
         result = _session(
@@ -234,11 +240,13 @@ async def test_uncertain_base_probe_stops_before_second_session(monkeypatch, uns
         {"status": "success", "exit_code": 0, "truncated": True},
     ],
 )
-async def test_required_probe_must_be_zero_exit_and_untruncated(monkeypatch, probe_update):
+async def test_required_probe_must_be_zero_exit_and_untruncated(
+    monkeypatch: pytest.MonkeyPatch, probe_update: dict[str, Any]
+) -> None:
     _configure()
     calls = 0
 
-    async def fake_serial(*_args):
+    async def fake_serial(*_args: object) -> dict[str, Any]:
         nonlocal calls
         calls += 1
         result = _session(
@@ -261,11 +269,11 @@ async def test_required_probe_must_be_zero_exit_and_untruncated(monkeypatch, pro
     assert calls == 1
 
 
-async def test_optional_failed_and_truncated_probes_are_reported(monkeypatch):
+async def test_optional_failed_and_truncated_probes_are_reported(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure()
     calls = 0
 
-    async def fake_serial(_server_id, _commands, _timeout):
+    async def fake_serial(_server_id: str, _commands: list[str], _timeout: float) -> dict[str, Any]:
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -293,7 +301,7 @@ async def test_optional_failed_and_truncated_probes_are_reported(monkeypatch):
         result["commands"][0]["truncated"] = True
         return result
 
-    async def fake_identity(_server_id):
+    async def fake_identity(_server_id: str) -> dict[str, Any]:
         return {"status": "success", "serial_number": "ABC123"}
 
     monkeypatch.setattr("tools.network_collect._run_serial_commands", fake_serial)
@@ -306,11 +314,11 @@ async def test_optional_failed_and_truncated_probes_are_reported(monkeypatch):
     assert host["source"]["optional_probe_failures"] == ["pci", "detail_0"]
 
 
-async def test_configured_redfish_serial_conflict_is_not_persisted(monkeypatch):
+async def test_configured_redfish_serial_conflict_is_not_persisted(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure()
     calls = 0
 
-    async def fake_serial(*_args):
+    async def fake_serial(*_args: object) -> dict[str, Any]:
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -332,10 +340,10 @@ async def test_configured_redfish_serial_conflict_is_not_persisted(monkeypatch):
             ]
         )
 
-    async def fake_identity(_server_id):
+    async def fake_identity(_server_id: str) -> dict[str, Any]:
         return {"status": "success", "serial_number": "DIFFERENT"}
 
-    async def fail_save(*_args, **_kwargs):
+    async def fail_save(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("conflicting serial identities must not be persisted")
 
     monkeypatch.setattr("tools.network_collect._run_serial_commands", fake_serial)
@@ -351,13 +359,13 @@ async def test_configured_redfish_serial_conflict_is_not_persisted(monkeypatch):
     assert host["saved"]["status"] == "error"
 
 
-async def test_unverified_identity_fails_closed_for_persistence(monkeypatch):
+async def test_unverified_identity_fails_closed_for_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure()
     config.CONFIG["host1"].pop("expected_host_macs")
     config.CONFIG["host1"].pop("serial_number")
     calls = 0
 
-    async def fake_serial(*_args):
+    async def fake_serial(*_args: object) -> dict[str, Any]:
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -379,10 +387,10 @@ async def test_unverified_identity_fails_closed_for_persistence(monkeypatch):
             ]
         )
 
-    async def unavailable_identity(_server_id):
+    async def unavailable_identity(_server_id: str) -> dict[str, Any]:
         return {"status": "unavailable"}
 
-    async def fail_save(*_args, **_kwargs):
+    async def fail_save(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("unverified identity must not be persisted")
 
     monkeypatch.setattr("tools.network_collect._run_serial_commands", fake_serial)
@@ -397,10 +405,10 @@ async def test_unverified_identity_fails_closed_for_persistence(monkeypatch):
     assert host["saved"]["message"] == "identity unverified: collected data was not persisted"
 
 
-async def test_serial_failure_reports_visual_vnc_fallback_without_typing(monkeypatch):
+async def test_serial_failure_reports_visual_vnc_fallback_without_typing(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure()
 
-    async def fake_serial(*args):
+    async def fake_serial(*args: object) -> dict[str, Any]:
         return {
             "status": "error",
             "phase": "prompt-probe",
@@ -420,7 +428,7 @@ async def test_serial_failure_reports_visual_vnc_fallback_without_typing(monkeyp
     assert host["retry_safe"] is True
 
 
-async def test_collect_network_inventory_is_registered():
+async def test_collect_network_inventory_is_registered() -> None:
     async with Client(config.mcp) as client:
         names = {tool.name for tool in await client.list_tools()}
     assert "collect_network_inventory" in names

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Internal helper functions for Redfish API calls.
 """
@@ -7,28 +6,29 @@ import asyncio
 import ipaddress
 import re
 import time
-import httpx
+from typing import Any
 from urllib.parse import unquote, urlsplit
-from typing import Any, Dict, Optional
+
+import httpx
 
 import config as cfg
 from config import (
     CONFIG,
     VIRTUAL_MEDIA_PATH_CACHE,
+    _load_config,
     logger,
     request_logger,
-    _load_config,
 )
-from handlers import VENDOR_MAP
+from handlers import VENDOR_MAP, BaseVendorHandler
 
 # Lazily-initialised async HTTP clients.  Keep verified and unverified TLS
 # traffic on different clients so one host's setting can never weaken another
 # host's connection.
-_http_client: Optional[httpx.AsyncClient] = None
-_verified_http_client: Optional[httpx.AsyncClient] = None
+_http_client: httpx.AsyncClient | None = None
+_verified_http_client: httpx.AsyncClient | None = None
 
 # Cache handler instances so we don't re-create one on every API call.
-_HANDLER_CACHE: Dict[str, Any] = {}
+_HANDLER_CACHE: dict[str, Any] = {}
 
 _HOST_LABEL_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
 
@@ -51,7 +51,7 @@ def _get_http_client(verify: bool = False) -> httpx.AsyncClient:
     return _http_client
 
 
-def _verify_ssl_setting(server_config: Dict[str, Any]) -> bool:
+def _verify_ssl_setting(server_config: dict[str, Any]) -> bool:
     """Return one host's explicit TLS policy, rejecting ambiguous YAML values."""
     if "verify_ssl" not in server_config:
         raise ValueError("verify_ssl must be explicitly configured for the Redfish endpoint")
@@ -61,7 +61,7 @@ def _verify_ssl_setting(server_config: Dict[str, Any]) -> bool:
     return value
 
 
-def _bmc_url_authority(value: Any) -> str:
+def _bmc_url_authority(value: object) -> str:
     """Validate one configured BMC host and return its safe URL authority."""
     if not isinstance(value, str) or not value or value != value.strip():
         raise ValueError("bmc_ip must be a non-empty hostname or IP address")
@@ -76,7 +76,7 @@ def _bmc_url_authority(value: Any) -> str:
     try:
         address = ipaddress.ip_address(value)
     except ValueError:
-        host_without_final_dot = value[:-1] if value.endswith(".") else value
+        host_without_final_dot = value.removesuffix(".")
         numeric_labels = host_without_final_dot.split(".")
         numeric_like = bool(numeric_labels) and all(
             re.fullmatch(r"(?:0[xX][0-9A-Fa-f]+|[0-9]+)", label) for label in numeric_labels
@@ -99,7 +99,7 @@ def _bmc_url_authority(value: Any) -> str:
     return str(address)
 
 
-def _configured_port(value: Any, label: str) -> int:
+def _configured_port(value: object, label: str) -> int:
     """Validate an explicitly configured TCP port without protocol defaults."""
     if isinstance(value, bool):
         raise ValueError(f"{label} must be explicitly configured between 1 and 65535")
@@ -112,7 +112,7 @@ def _configured_port(value: Any, label: str) -> int:
     return port
 
 
-def _redfish_url_authority(server_config: Dict[str, Any]) -> str:
+def _redfish_url_authority(server_config: dict[str, Any]) -> str:
     """Build one Redfish authority from YAML-provided host and port fields."""
     host = _bmc_url_authority(server_config.get("bmc_ip"))
     redfish = server_config.get("redfish")
@@ -154,7 +154,7 @@ def _origin_relative_path(path: str) -> str:
 
 async def _get_vendor_from_api(
     bmc_ip: str,
-    redfish_port: Any,
+    redfish_port: object,
     verify_ssl: bool = False,
 ) -> str:
     """Detect vendor by querying the Redfish API asynchronously."""
@@ -182,7 +182,7 @@ async def _get_vendor_from_api(
         raise ConnectionError(f"Could not auto-detect vendor for {bmc_ip}")
 
 
-async def _get_handler(server_id: str):
+async def _get_handler(server_id: str) -> BaseVendorHandler:
     """Get the appropriate vendor handler for a given server.
 
     Returns a cached instance when one already exists for *server_id*.
@@ -193,8 +193,9 @@ async def _get_handler(server_id: str):
 
     _load_config()
 
-    from config import CONFIG_FILE
     import os
+
+    from config import CONFIG_FILE
 
     if not CONFIG and not os.path.exists(CONFIG_FILE):
         raise ValueError(
@@ -243,10 +244,10 @@ async def _redfish_call(
     server_id: str,
     method: str,
     path: str,
-    payload: Optional[Dict] = None,
-    timeout: Optional[int] = None,
+    payload: dict | None = None,
+    timeout: int | None = None,
     json_response: bool = True,
-) -> Dict:
+) -> dict:
     """Internal function to make a generic Redfish API call."""
     method_name = method.upper() if isinstance(method, str) else ""
     read_only = method_name in {"GET", "HEAD", "OPTIONS"}
@@ -395,7 +396,7 @@ async def _redfish_call(
         return result
 
 
-def _response_header(response: Dict[str, Any], name: str) -> Optional[str]:
+def _response_header(response: dict[str, Any], name: str) -> str | None:
     """Return one response header without depending on its original casing."""
     headers = response.get("headers") or {}
     if not isinstance(headers, dict):
@@ -445,7 +446,7 @@ async def _find_virtual_cd_path(server_id: str) -> str:
     raise ValueError(f"No suitable virtual CD drive found on {server_id}")
 
 
-async def _get_vm_path_and_state(server_id: str) -> Dict[str, Any]:
+async def _get_vm_path_and_state(server_id: str) -> dict[str, Any]:
     """Returns a dict with vm_path and current state for the server's virtual media.
 
     Shape: {"vm_path": str, "inserted": bool, "image": Optional[str], "raw": dict}
@@ -463,13 +464,13 @@ async def _get_vm_path_and_state(server_id: str) -> Dict[str, Any]:
     }
 
 
-async def _eject_virtual_media(server_id: str, vm_path: str) -> Dict:
+async def _eject_virtual_media(server_id: str, vm_path: str) -> dict:
     """Executes the EjectMedia action and returns the raw result dict."""
     action = f"{vm_path}/Actions/VirtualMedia.EjectMedia"
     return await _redfish_call(server_id, "POST", action, {})
 
 
-async def _insert_virtual_media(server_id: str, vm_path: str, image_url: str) -> Dict:
+async def _insert_virtual_media(server_id: str, vm_path: str, image_url: str) -> dict:
     """Executes the InsertMedia action for the given image_url and returns result."""
     action = f"{vm_path}/Actions/VirtualMedia.InsertMedia"
     payload = {"Image": image_url, "Inserted": True}
@@ -479,10 +480,10 @@ async def _insert_virtual_media(server_id: str, vm_path: str, image_url: str) ->
 async def _ensure_boot_once_single(
     server_id: str,
     desired_target: str,
-    mode: Optional[str] = None,
+    mode: str | None = None,
     reboot: bool = False,
     reboot_type: str = "GracefulRestart",
-) -> Dict:
+) -> dict:
     """Ensure next boot uses *desired_target* once for a single server.
 
     Args:
@@ -517,7 +518,7 @@ async def _ensure_boot_once_single(
         )
 
         if not already:
-            payload: Dict[str, Any] = {
+            payload: dict[str, Any] = {
                 "Boot": {
                     "BootSourceOverrideEnabled": "Once",
                     "BootSourceOverrideTarget": desired_target,

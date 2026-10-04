@@ -1,14 +1,14 @@
-#!/usr/bin/env python3
 """In-memory background operations for fleet workflows that exceed MCP call timeouts."""
 
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 import secrets
 import time
-from typing import Any, Awaitable, Callable, Dict, List, Optional
 import uuid
+from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
+from typing import Any
 
 import config as cfg
 from config import mcp
@@ -17,7 +17,7 @@ from tools.network_collect import collect_network_inventory
 from tools.serial_console import run_console_command_batch
 
 _MAX_OPERATIONS = 128
-_OPERATIONS: Dict[str, Dict[str, Any]] = {}
+_OPERATIONS: dict[str, dict[str, Any]] = {}
 _OPERATION_LOCK = asyncio.Lock()
 _PROCESS_INSTANCE_ID = uuid.uuid4().hex[:12]
 
@@ -34,7 +34,7 @@ def _operation_ttl() -> int:
     return max(60, min(value, 86400))
 
 
-def _public_operation(record: Dict[str, Any]) -> Dict[str, Any]:
+def _public_operation(record: dict[str, Any]) -> dict[str, Any]:
     return {
         key: value for key, value in record.items() if key not in {"task", "private_arguments", "expires_at_monotonic"}
     }
@@ -62,7 +62,7 @@ def _prune_operations() -> None:
         _OPERATIONS.pop(operation_id, None)
 
 
-def _entry_remote_state(entry: Dict[str, Any]) -> str:
+def _entry_remote_state(entry: dict[str, Any]) -> str:
     """Classify one completed result without assuming an unreported mutation outcome."""
     if entry.get("outcome_unknown") is True:
         return "unknown"
@@ -91,7 +91,7 @@ def _entry_remote_state(entry: Dict[str, Any]) -> str:
     return "unknown"
 
 
-def _aggregate_remote_outcome(result: Any) -> Dict[str, Any]:
+def _aggregate_remote_outcome(result: object) -> dict[str, Any]:
     """Summarize nested remote outcomes for safe operation-level decisions."""
     if not isinstance(result, dict):
         return {
@@ -122,7 +122,7 @@ def _aggregate_remote_outcome(result: Any) -> Dict[str, Any]:
 
 async def _run_operation(
     operation_id: str,
-    runner: Callable[[], Awaitable[Dict[str, Any]]],
+    runner: Callable[[], Awaitable[dict[str, Any]]],
 ) -> None:
     record = _OPERATIONS[operation_id]
     record.update({"state": "running", "started_at": _utc_now()})
@@ -157,17 +157,17 @@ async def _run_operation(
 
 async def _start_operation(
     operation_type: str,
-    summary: Dict[str, Any],
-    private_arguments: Dict[str, Any],
-    runner: Callable[[], Awaitable[Dict[str, Any]]],
-) -> Dict[str, Any]:
+    summary: dict[str, Any],
+    private_arguments: dict[str, Any],
+    runner: Callable[[], Awaitable[dict[str, Any]]],
+) -> dict[str, Any]:
     async with _OPERATION_LOCK:
         _prune_operations()
         active = sum(record.get("state") in {"queued", "running"} for record in _OPERATIONS.values())
         if len(_OPERATIONS) >= _MAX_OPERATIONS and active >= _MAX_OPERATIONS:
             return {"status": "error", "message": "Too many active background operations"}
         operation_id = f"{_PROCESS_INSTANCE_ID}-{uuid.uuid4().hex}"
-        record: Dict[str, Any] = {
+        record: dict[str, Any] = {
             "status": "success",
             "operation_id": operation_id,
             "operation_type": operation_type,
@@ -194,13 +194,13 @@ async def _start_operation(
     )
 )
 async def start_console_command_batch(
-    server_ids: List[str],
+    server_ids: list[str],
     command: str,
-    timeout_seconds: Optional[float] = None,
-    concurrency: Optional[int] = None,
+    timeout_seconds: float | None = None,
+    concurrency: int | None = None,
     dry_run: bool = True,
-    confirm_command: Optional[str] = None,
-) -> Dict[str, Any]:
+    confirm_command: str | None = None,
+) -> dict[str, Any]:
     if dry_run:
         return await run_console_command_batch(
             server_ids,
@@ -241,7 +241,7 @@ async def start_console_command_batch(
         "confirm_command": command,
     }
 
-    async def run() -> Dict[str, Any]:
+    async def run() -> dict[str, Any]:
         return await run_console_command_batch(**arguments)
 
     return await _start_operation(
@@ -259,12 +259,12 @@ async def start_console_command_batch(
 
 @mcp.tool(description="Start read-only console network collection and optional local persistence in the background.")
 async def start_network_inventory_collection(
-    server_ids: List[str],
+    server_ids: list[str],
     transport: str = "auto",
     save: bool = True,
-    concurrency: Optional[int] = None,
-    timeout_seconds: Optional[float] = None,
-) -> Dict[str, Any]:
+    concurrency: int | None = None,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
     arguments = {
         "server_ids": list(server_ids) if isinstance(server_ids, list) else server_ids,
         "transport": transport,
@@ -273,7 +273,7 @@ async def start_network_inventory_collection(
         "timeout_seconds": timeout_seconds,
     }
 
-    async def run() -> Dict[str, Any]:
+    async def run() -> dict[str, Any]:
         return await collect_network_inventory(**arguments)
 
     return await _start_operation(
@@ -290,14 +290,14 @@ async def start_network_inventory_collection(
 
 @mcp.tool(description="Start bounded Dell hardware XML export and manifest generation in the background.")
 async def start_hardware_inventory_export(
-    server_ids: List[str],
-    collection: Optional[str] = None,
+    server_ids: list[str],
+    collection: str | None = None,
     refresh: bool = False,
-    concurrency: Optional[int] = None,
+    concurrency: int | None = None,
     include_xml: bool = False,
-    poll_interval_seconds: Optional[float] = None,
-    timeout_seconds: Optional[float] = None,
-) -> Dict[str, Any]:
+    poll_interval_seconds: float | None = None,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
     arguments = {
         "server_ids": list(server_ids) if isinstance(server_ids, list) else server_ids,
         "collection": collection,
@@ -308,7 +308,7 @@ async def start_hardware_inventory_export(
         "timeout_seconds": timeout_seconds,
     }
 
-    async def run() -> Dict[str, Any]:
+    async def run() -> dict[str, Any]:
         return await export_hardware_inventory_xml(**arguments)
 
     return await _start_operation(
@@ -325,7 +325,7 @@ async def start_hardware_inventory_export(
 
 
 @mcp.tool(description="Read current state and result for one background fleet operation.")
-async def get_operation(operation_id: str) -> Dict[str, Any]:
+async def get_operation(operation_id: str) -> dict[str, Any]:
     if not isinstance(operation_id, str) or not operation_id.strip():
         return {"status": "error", "message": "operation_id is required"}
     async with _OPERATION_LOCK:
@@ -353,8 +353,8 @@ async def get_operation(operation_id: str) -> Dict[str, Any]:
 async def retry_console_operation_failures(
     operation_id: str,
     confirm_command: str,
-    concurrency: Optional[int] = None,
-) -> Dict[str, Any]:
+    concurrency: int | None = None,
+) -> dict[str, Any]:
     async with _OPERATION_LOCK:
         _prune_operations()
         record = _OPERATIONS.get(operation_id)

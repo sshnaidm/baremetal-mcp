@@ -1,29 +1,27 @@
-#!/usr/bin/env python3
 """
 Virtual media management tools - mount/unmount ISO images.
 """
 
 import asyncio
 import time
-from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 import config as cfg
 from config import mcp
 from helpers import (
-    _redfish_call,
+    _eject_virtual_media,
+    _ensure_boot_once_single,
     _get_handler,
     _get_vm_path_and_state,
-    _eject_virtual_media,
     _insert_virtual_media,
-    _ensure_boot_once_single,
+    _redfish_call,
 )
 
 _MAX_BATCH_SIZE = 64
 _MAX_CONCURRENCY = 12
 
 
-def _mutation_record(action: str, phase: str, result: Dict, **details) -> Dict:
+def _mutation_record(action: str, phase: str, result: dict, **details: object) -> dict:
     """Return a small, stable record for one mutating Redfish request."""
     sent = result.get("remote_request_sent")
     accepted = result.get("status") == "success"
@@ -49,7 +47,7 @@ def _mutation_record(action: str, phase: str, result: Dict, **details) -> Dict:
     }
 
 
-def _ambiguous_mutation(action: str, phase: str, **details) -> Dict:
+def _ambiguous_mutation(action: str, phase: str, **details: object) -> dict:
     """Conservatively describe an exception raised during a mutation call."""
     return {
         "action": action,
@@ -63,11 +61,11 @@ def _ambiguous_mutation(action: str, phase: str, **details) -> Dict:
 
 
 def _mutation_summary(
-    mutations: List[Dict],
+    mutations: list[dict],
     *,
     failed: bool,
     state_unconfirmed: bool = False,
-) -> Dict:
+) -> dict:
     sent_values = [item.get("remote_request_sent") for item in mutations]
     if any(value is True for value in sent_values):
         remote_request_sent = True
@@ -92,12 +90,12 @@ def _mutation_summary(
 def _boot_failure(
     server_id: str,
     phase: str,
-    failure: Dict,
-    actions: List[str],
-    mutations: List[Dict],
+    failure: dict,
+    actions: list[str],
+    mutations: list[dict],
     *,
     state_unconfirmed: bool = False,
-) -> Dict:
+) -> dict:
     result = {"server_id": server_id, **failure, "status": "error", "phase": phase}
     result["actions_completed"] = list(actions)
     result.update(
@@ -110,7 +108,7 @@ def _boot_failure(
     return result
 
 
-def _validate_image_url(image_url: str) -> Optional[str]:
+def _validate_image_url(image_url: str) -> str | None:
     if not isinstance(image_url, str) or not image_url.strip():
         return "image_url is required"
     if len(image_url) > 2048 or any(ord(char) < 33 or ord(char) == 127 for char in image_url):
@@ -123,12 +121,12 @@ def _validate_image_url(image_url: str) -> Optional[str]:
     return None
 
 
-def _normalize_server_ids(server_ids: List[str]) -> tuple[Optional[List[str]], Optional[str]]:
+def _normalize_server_ids(server_ids: list[str]) -> tuple[list[str] | None, str | None]:
     if not isinstance(server_ids, list) or not server_ids:
         return None, "server_ids must be a non-empty list"
     if len(server_ids) > _MAX_BATCH_SIZE:
         return None, f"At most {_MAX_BATCH_SIZE} server IDs may be requested at once"
-    values: List[str] = []
+    values: list[str] = []
     seen: set[str] = set()
     for value in server_ids:
         if not isinstance(value, str) or not value.strip():
@@ -146,9 +144,9 @@ async def _wait_for_media(
     server_id: str,
     image_url: str,
     timeout_seconds: float,
-) -> Dict:
+) -> dict:
     deadline = time.monotonic() + timeout_seconds
-    last_state: Dict = {}
+    last_state: dict = {}
     while True:
         last_state = await _get_vm_path_and_state(server_id)
         if last_state.get("inserted") is True and last_state.get("image") == image_url:
@@ -160,7 +158,7 @@ async def _wait_for_media(
         await asyncio.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
 
 
-async def _verify_boot_override(server_id: str, mode: Optional[str]) -> Dict:
+async def _verify_boot_override(server_id: str, mode: str | None) -> dict:
     handler = await _get_handler(server_id)
     response = await _redfish_call(server_id, "GET", handler.SYSTEM_PATH)
     if response.get("status") != "success":
@@ -188,7 +186,7 @@ async def _verify_boot_override(server_id: str, mode: Optional[str]) -> Dict:
 
 
 @mcp.tool(description="Declaratively ensure ISO/image is mounted as virtual media (idempotent), in parallel.")
-async def inject_media(server_ids: List[str], image_url: str, concurrency: Optional[int] = None) -> List[Dict]:
+async def inject_media(server_ids: list[str], image_url: str, concurrency: int | None = None) -> list[dict]:
     """Ensure desired ISO is mounted.
 
     Behavior
@@ -209,7 +207,7 @@ async def inject_media(server_ids: List[str], image_url: str, concurrency: Optio
     if error:
         return [{"status": "error", "phase": "validation", "message": error}]
 
-    async def _inject_single(server_id: str) -> Dict:
+    async def _inject_single(server_id: str) -> dict:
         try:
             state = await _get_vm_path_and_state(server_id)
             vm_path = state["vm_path"]
@@ -239,7 +237,7 @@ async def inject_media(server_ids: List[str], image_url: str, concurrency: Optio
 
     semaphore = asyncio.Semaphore(concurrency)
 
-    async def run(server_id: str) -> Dict:
+    async def run(server_id: str) -> dict:
         async with semaphore:
             return await _inject_single(server_id)
 
@@ -248,7 +246,7 @@ async def inject_media(server_ids: List[str], image_url: str, concurrency: Optio
 
 
 @mcp.tool(description="Declaratively ensure no virtual media is mounted (idempotent), in parallel.")
-async def eject_media(server_ids: List[str], concurrency: Optional[int] = None) -> List[Dict]:
+async def eject_media(server_ids: list[str], concurrency: int | None = None) -> list[dict]:
     """Ensure no ISO is mounted.
 
     Behavior
@@ -267,7 +265,7 @@ async def eject_media(server_ids: List[str], concurrency: Optional[int] = None) 
     if error:
         return [{"status": "error", "phase": "validation", "message": error}]
 
-    async def _eject_single(server_id: str) -> Dict:
+    async def _eject_single(server_id: str) -> dict:
         try:
             state = await _get_vm_path_and_state(server_id)
             vm_path = state["vm_path"]
@@ -294,7 +292,7 @@ async def eject_media(server_ids: List[str], concurrency: Optional[int] = None) 
 
     semaphore = asyncio.Semaphore(concurrency)
 
-    async def run(server_id: str) -> Dict:
+    async def run(server_id: str) -> dict:
         async with semaphore:
             return await _eject_single(server_id)
 
@@ -304,15 +302,15 @@ async def eject_media(server_ids: List[str], concurrency: Optional[int] = None) 
 
 @mcp.tool(description="Ensure ISO is mounted, set one-time boot to CD, and reboot if requested (declarative).")
 async def boot_from_iso(
-    server_ids: List[str],
+    server_ids: list[str],
     image_url: str,
-    mode: Optional[str] = None,
+    mode: str | None = None,
     reboot: bool = True,
     reboot_type: str = "ForceRestart",
     verify: bool = True,
     verification_timeout_seconds: float = 15.0,
-    concurrency: Optional[int] = None,
-) -> List[Dict]:
+    concurrency: int | None = None,
+) -> list[dict]:
     """Ensure ISO is mounted and next boot is from CD (Once); reboot by default.
 
     - If the same ISO is already mounted, it will not re-insert.
@@ -348,13 +346,13 @@ async def boot_from_iso(
     if validation_error:
         return [{"status": "error", "phase": "validation", "message": validation_error}]
 
-    async def _process_single(server_id: str) -> Dict:
-        actions: List[str] = []
-        mutations: List[Dict] = []
+    async def _process_single(server_id: str) -> dict:
+        actions: list[str] = []
+        mutations: list[dict] = []
         phase = "media-state"
         pending_mutation = None
         try:
-            verification: Dict = {}
+            verification: dict = {}
 
             # Ensure media state
             state = await _get_vm_path_and_state(server_id)
@@ -520,7 +518,7 @@ async def boot_from_iso(
 
     semaphore = asyncio.Semaphore(concurrency)
 
-    async def run(server_id: str) -> Dict:
+    async def run(server_id: str) -> dict:
         async with semaphore:
             return await _process_single(server_id)
 

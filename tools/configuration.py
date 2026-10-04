@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
 """Sanitized configuration preflight tools for batch operations."""
 
 from __future__ import annotations
 
 import ipaddress
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import config as cfg
 from config import mcp
@@ -13,7 +12,7 @@ from helpers import _configured_port
 _CAPABILITIES = {"redfish", "serial", "vnc", "network_inventory", "hardware_xml"}
 
 
-def _valid_host(value: Any) -> bool:
+def _valid_host(value: object) -> bool:
     if not isinstance(value, str) or not value.strip() or any(ord(char) < 32 for char in value):
         return False
     candidate = value.strip()
@@ -32,7 +31,7 @@ def _valid_host(value: Any) -> bool:
         )
 
 
-def _credential_presence(server_id: str) -> Dict[str, bool]:
+def _credential_presence(server_id: str) -> dict[str, bool]:
     credentials = cfg.get_server_credentials(server_id) or {}
     return {
         "username": bool(credentials.get("username")),
@@ -43,8 +42,8 @@ def _credential_presence(server_id: str) -> Dict[str, bool]:
 
 def _validate_server(
     server_id: str,
-    capabilities: List[str],
-) -> Dict[str, Any]:
+    capabilities: list[str],
+) -> dict[str, Any]:
     server = cfg.CONFIG.get(server_id)
     if not isinstance(server, dict):
         return {
@@ -54,8 +53,8 @@ def _validate_server(
             "warnings": [],
         }
 
-    errors: List[str] = []
-    warnings: List[str] = []
+    errors: list[str] = []
+    warnings: list[str] = []
     bmc_address = server.get("bmc_ip")
     if not _valid_host(bmc_address):
         errors.append("bmc_ip is missing or invalid")
@@ -166,9 +165,9 @@ def _validate_server(
     )
 )
 async def validate_host_configuration(
-    server_ids: Optional[List[str]] = None,
-    capabilities: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    server_ids: list[str] | None = None,
+    capabilities: list[str] | None = None,
+) -> dict[str, Any]:
     cfg._load_config()
     if server_ids is None:
         selected = sorted(cfg.CONFIG)

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Persistent, searchable network-interface inventory snapshots."""
 
 from __future__ import annotations
@@ -10,10 +9,11 @@ import os
 import re
 import tempfile
 from collections import defaultdict
+from collections.abc import Iterable
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 from urllib.parse import quote
 
 import yaml
@@ -23,7 +23,7 @@ from config import mcp
 
 SCHEMA_VERSION = 1
 MAX_SEARCH_RESULTS = 1000
-_INVENTORY_LOCKS: Dict[str, asyncio.Lock] = {}
+_INVENTORY_LOCKS: dict[str, asyncio.Lock] = {}
 _COLLECTION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 SENSITIVE_KEYS = {
     "api_key",
@@ -77,7 +77,7 @@ def _parse_timestamp(value: str) -> datetime:
     return datetime.fromisoformat(_validate_timestamp(value).replace("Z", "+00:00"))
 
 
-def _reject_secrets(value: Any, path: str = "inventory") -> None:
+def _reject_secrets(value: object, path: str = "inventory") -> None:
     if isinstance(value, dict):
         for key, child in value.items():
             normalized = str(key).lower().replace("-", "_")
@@ -96,7 +96,7 @@ def _normalize_mac(value: str) -> str:
     return ":".join(compact[index : index + 2] for index in range(0, 12, 2)).lower()
 
 
-def _normalize_address(value: Any) -> Dict[str, Any]:
+def _normalize_address(value: object) -> dict[str, Any]:
     entry = {"address": value} if isinstance(value, str) else dict(value)
     address = str(entry.get("address", "")).strip()
     if not address:
@@ -112,7 +112,7 @@ def _normalize_address(value: Any) -> Dict[str, Any]:
     return entry
 
 
-def _normalize_route(value: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_route(value: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("Every route must be a mapping")
     route = dict(value)
@@ -139,7 +139,7 @@ def _normalize_route(value: Dict[str, Any]) -> Dict[str, Any]:
     return route
 
 
-def _normalize_interface(value: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_interface(value: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("Every interface must be a mapping")
     interface = dict(value)
@@ -177,7 +177,7 @@ def _normalize_interface(value: Dict[str, Any]) -> Dict[str, Any]:
     return interface
 
 
-def _load_inventory(path: Path) -> Dict[str, Any]:
+def _load_inventory(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as stream:
         value = yaml.safe_load(stream) or {}
     if not isinstance(value, dict):
@@ -187,7 +187,7 @@ def _load_inventory(path: Path) -> Dict[str, Any]:
     return _validate_loaded_document(value)
 
 
-def _write_inventory(path: Path, inventory: Dict[str, Any]) -> None:
+def _write_inventory(path: Path, inventory: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent, text=True)
     try:
@@ -204,7 +204,7 @@ def _write_inventory(path: Path, inventory: Dict[str, Any]) -> None:
         raise
 
 
-def _write_json(path: Path, value: Dict[str, Any]) -> None:
+def _write_json(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent, text=True)
     try:
@@ -233,13 +233,13 @@ def _normalize_server_id(server_id: str) -> str:
 
 def _build_inventory_document(
     server_id: str,
-    interfaces: List[Dict[str, Any]],
+    interfaces: list[dict[str, Any]],
     *,
-    host: Optional[Dict[str, Any]] = None,
-    routes: Optional[List[Dict[str, Any]]] = None,
-    source: Optional[Dict[str, Any]] = None,
-    observed_at: Optional[str] = None,
-) -> Dict[str, Any]:
+    host: dict[str, Any] | None = None,
+    routes: list[dict[str, Any]] | None = None,
+    source: dict[str, Any] | None = None,
+    observed_at: str | None = None,
+) -> dict[str, Any]:
     server_id = _normalize_server_id(server_id)
     if not isinstance(interfaces, list):
         raise ValueError("interfaces must be a list")
@@ -247,7 +247,7 @@ def _build_inventory_document(
     names = [interface["name"] for interface in normalized]
     if len(names) != len(set(names)):
         raise ValueError("interface names must be unique within a host")
-    document: Dict[str, Any] = {
+    document: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "server_id": server_id,
         "observed_at": _validate_timestamp(observed_at) if observed_at else _timestamp(),
@@ -262,7 +262,7 @@ def _build_inventory_document(
     return document
 
 
-def _validate_loaded_document(value: Dict[str, Any]) -> Dict[str, Any]:
+def _validate_loaded_document(value: dict[str, Any]) -> dict[str, Any]:
     """Deep-validate a stored schema document before consumers traverse it."""
     document = deepcopy(value)
     document["server_id"] = _normalize_server_id(document.get("server_id"))
@@ -271,7 +271,7 @@ def _validate_loaded_document(value: Dict[str, Any]) -> Dict[str, Any]:
     interfaces = document.get("interfaces")
     if not isinstance(interfaces, list):
         raise ValueError("inventory document must contain an interfaces list")
-    normalized_interfaces: List[Dict[str, Any]] = []
+    normalized_interfaces: list[dict[str, Any]] = []
     for index, interface in enumerate(interfaces):
         try:
             normalized_interfaces.append(_normalize_interface(interface))
@@ -285,7 +285,7 @@ def _validate_loaded_document(value: Dict[str, Any]) -> Dict[str, Any]:
     routes = document.get("routes", [])
     if not isinstance(routes, list):
         raise ValueError("inventory document routes must be a list")
-    normalized_routes: List[Dict[str, Any]] = []
+    normalized_routes: list[dict[str, Any]] = []
     for index, route in enumerate(routes):
         try:
             normalized_routes.append(_normalize_route(route))
@@ -300,7 +300,7 @@ def _validate_loaded_document(value: Dict[str, Any]) -> Dict[str, Any]:
     return document
 
 
-def _summarize_document(document: Dict[str, Any]) -> Dict[str, Any]:
+def _summarize_document(document: dict[str, Any]) -> dict[str, Any]:
     interfaces = document["interfaces"]
     return {
         "server_id": document["server_id"],
@@ -311,7 +311,7 @@ def _summarize_document(document: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _iter_inventories() -> Iterable[tuple[Path, Dict[str, Any]]]:
+def _iter_inventories() -> Iterable[tuple[Path, dict[str, Any]]]:
     for path in sorted((_inventory_root() / "hosts").glob("*.yaml")):
         yield path, _load_inventory(path)
 
@@ -323,7 +323,7 @@ def _address_matches(address: str, query: str) -> bool:
     return stored == ipaddress.ip_address(query)
 
 
-def _flat_match(inventory: Dict[str, Any], interface: Dict[str, Any]) -> Dict[str, Any]:
+def _flat_match(inventory: dict[str, Any], interface: dict[str, Any]) -> dict[str, Any]:
     link = interface.get("link", {})
     return {
         "server_id": inventory["server_id"],
@@ -351,13 +351,13 @@ def _flat_match(inventory: Dict[str, Any], interface: Dict[str, Any]) -> Dict[st
 )
 async def save_network_inventory(
     server_id: str,
-    interfaces: List[Dict[str, Any]],
-    host: Optional[Dict[str, Any]] = None,
-    routes: Optional[List[Dict[str, Any]]] = None,
-    source: Optional[Dict[str, Any]] = None,
-    observed_at: Optional[str] = None,
+    interfaces: list[dict[str, Any]],
+    host: dict[str, Any] | None = None,
+    routes: list[dict[str, Any]] | None = None,
+    source: dict[str, Any] | None = None,
+    observed_at: str | None = None,
     reject_older: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Persist the latest structured network snapshot for a host."""
     try:
         document = _build_inventory_document(
@@ -402,13 +402,13 @@ async def save_network_inventory(
     )
 )
 async def save_network_inventories(
-    inventories: List[Dict[str, Any]],
+    inventories: list[dict[str, Any]],
     reject_older: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if not isinstance(inventories, list) or not inventories:
         return {"status": "error", "message": "inventories must be a non-empty list"}
 
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in inventories:
         if not isinstance(item, dict):
@@ -441,7 +441,7 @@ async def save_network_inventories(
 
 
 @mcp.tool(description="Read the latest saved structured network inventory for one host.")
-async def get_network_inventory(server_id: str) -> Dict[str, Any]:
+async def get_network_inventory(server_id: str) -> dict[str, Any]:
     path = _host_path(server_id.strip())
     if not path.exists():
         return {"status": "error", "server_id": server_id, "message": "network inventory not found"}
@@ -452,9 +452,9 @@ async def get_network_inventory(server_id: str) -> Dict[str, Any]:
 
 
 @mcp.tool(description="List saved host network inventories with interface, active-link, and address counts.")
-async def list_network_inventories() -> Dict[str, Any]:
-    hosts: List[Dict[str, Any]] = []
-    errors: List[Dict[str, str]] = []
+async def list_network_inventories() -> dict[str, Any]:
+    hosts: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
     for path in sorted((_inventory_root() / "hosts").glob("*.yaml")):
         try:
             inventory = _load_inventory(path)
@@ -476,16 +476,16 @@ async def list_network_inventories() -> Dict[str, Any]:
     )
 )
 async def search_network_inventory(
-    mac: Optional[str] = None,
-    interface: Optional[str] = None,
-    link_up: Optional[bool] = None,
-    ip: Optional[str] = None,
-    vendor: Optional[str] = None,
-    pci_address: Optional[str] = None,
-    server_id: Optional[str] = None,
+    mac: str | None = None,
+    interface: str | None = None,
+    link_up: bool | None = None,
+    ip: str | None = None,
+    vendor: str | None = None,
+    pci_address: str | None = None,
+    server_id: str | None = None,
     offset: int = 0,
     limit: int = 100,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     try:
         offset = int(offset)
         limit = int(limit)
@@ -502,8 +502,8 @@ async def search_network_inventory(
     except ValueError as exc:
         return {"status": "error", "message": str(exc)}
 
-    matches: List[Dict[str, Any]] = []
-    errors: List[Dict[str, str]] = []
+    matches: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
     for path in sorted((_inventory_root() / "hosts").glob("*.yaml")):
         try:
             inventory = _load_inventory(path)
@@ -541,8 +541,8 @@ async def search_network_inventory(
     }
 
 
-def _configured_host_macs(server_config: Dict[str, Any]) -> set[str]:
-    values: List[Any] = []
+def _configured_host_macs(server_config: dict[str, Any]) -> set[str]:
+    values: list[Any] = []
     for key in ("expected_host_macs", "host_macs"):
         configured = server_config.get(key)
         if isinstance(configured, list):
@@ -554,11 +554,11 @@ def _configured_host_macs(server_config: Dict[str, Any]) -> set[str]:
 
 
 def _inventory_documents(
-    server_ids: Optional[List[str]] = None,
-) -> tuple[Dict[str, Dict[str, Any]], List[Dict[str, str]]]:
+    server_ids: list[str] | None = None,
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
     selected = set(server_ids or [])
-    documents: Dict[str, Dict[str, Any]] = {}
-    errors: List[Dict[str, str]] = []
+    documents: dict[str, dict[str, Any]] = {}
+    errors: list[dict[str, str]] = []
     for path in sorted((_inventory_root() / "hosts").glob("*.yaml")):
         try:
             inventory = _load_inventory(path)
@@ -573,11 +573,11 @@ def _inventory_documents(
     return documents, errors
 
 
-def _build_aggregate(documents: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-    connected: List[Dict[str, Any]] = []
-    mac_index: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-    ip_index: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-    bmc_mac_index: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+def _build_aggregate(documents: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    connected: list[dict[str, Any]] = []
+    mac_index: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    ip_index: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    bmc_mac_index: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
     for server_id in sorted(documents):
         document = documents[server_id]
@@ -659,9 +659,9 @@ def _build_aggregate(documents: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     )
 )
 async def validate_network_inventories(
-    server_ids: Optional[List[str]] = None,
-    max_age_seconds: Optional[int] = None,
-) -> Dict[str, Any]:
+    server_ids: list[str] | None = None,
+    max_age_seconds: int | None = None,
+) -> dict[str, Any]:
     if server_ids is not None:
         if not isinstance(server_ids, list) or not server_ids:
             return {"status": "error", "message": "server_ids must be a non-empty list when provided"}
@@ -682,11 +682,11 @@ async def validate_network_inventories(
     if not requested:
         requested = sorted(documents)
     missing = sorted(set(requested) - set(documents))
-    stale: List[Dict[str, Any]] = []
-    up_without_mac: List[Dict[str, str]] = []
-    empty: List[str] = []
-    identity_mismatches: List[Dict[str, Any]] = []
-    mac_owners: Dict[str, List[Dict[str, str]]] = defaultdict(list)
+    stale: list[dict[str, Any]] = []
+    up_without_mac: list[dict[str, str]] = []
+    empty: list[str] = []
+    identity_mismatches: list[dict[str, Any]] = []
+    mac_owners: dict[str, list[dict[str, str]]] = defaultdict(list)
     now = datetime.now(timezone.utc)
 
     for server_id, document in documents.items():
@@ -751,10 +751,10 @@ async def validate_network_inventories(
     )
 )
 async def export_network_inventory(
-    server_ids: Optional[List[str]] = None,
+    server_ids: list[str] | None = None,
     format: str = "yaml",
     collection: str = "network-inventory",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if not isinstance(collection, str) or not _COLLECTION_RE.fullmatch(collection):
         return {
             "status": "error",

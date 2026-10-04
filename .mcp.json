@@ -2,13 +2,13 @@
   "mcpServers": {
     "baremetal-mcp": {
       "type": "stdio",
-      "command": ".venv/bin/fastmcp",
+      "command": "fastmcp",
       "args": ["run", "-t", "stdio", "main.py"],
       "env": {
         "PYTHONPATH": ".",
         "GLOBAL_CONFIG": "${GLOBAL_CONFIG:-global_config.yaml}",
-        "REDFISH_CONFIG": "${REDFISH_CONFIG:-/home/sshnaidm/sources/hosts-configs/full_redfish_servers.yaml}",
-        "REDFISH_SECRETS": "${REDFISH_SECRETS:-/home/sshnaidm/sources/hosts-configs/full_redfish_secrets.yaml}",
+        "REDFISH_CONFIG": "${REDFISH_CONFIG:-redfish_servers.yaml}",
+        "REDFISH_SECRETS": "${REDFISH_SECRETS:-redfish_secrets.yaml}",
         "ISOS_FILE": "${ISOS_FILE:-isos.yaml}"
       }
     }

@@ -1,27 +1,32 @@
-#!/usr/bin/env python3
 """
 Dell-specific tools - firmware updates, hardware inventory export, ISO listing.
 """
 
 import asyncio
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import tempfile
 import time
-from typing import Any, Dict, List, Optional
-from urllib.parse import quote, urlsplit
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote, urlsplit
 
 import config as cfg
-from config import mcp, ISOS, _load_config, _flatten_dict, logger
-from helpers import _redfish_call, _get_handler, _redfish_url_authority, _response_header
 from cache import RESPONSE_CACHE
+from config import ISOS, _flatten_dict, _load_config, logger, mcp
+from handlers import BaseVendorHandler
+from helpers import (
+    _get_handler,
+    _redfish_call,
+    _redfish_url_authority,
+    _response_header,
+)
 
-_COLLECTION_LOCKS: Dict[str, asyncio.Lock] = {}
+_COLLECTION_LOCKS: dict[str, asyncio.Lock] = {}
 _FAILED_TASK_STATES = {
     "cancelled",
     "canceled",
@@ -35,7 +40,7 @@ _ALLOWED_INVENTORY_ROOTS = {"cim", "inventory"}
 
 
 @mcp.tool(description="List all available ISOs with their URLs.")
-async def list_isos() -> Dict:
+async def list_isos() -> dict:
     """List all available ISOs with their URLs as flattened key-value pairs.
 
     Keys are formed by joining the nested YAML structure keys with underscores.
@@ -51,7 +56,7 @@ async def list_isos() -> Dict:
 
 
 @mcp.tool(description="List URL for a specific vendor and model and update target")
-async def dell_list_url(model: str, target: str, version: str) -> Dict:
+async def dell_list_url(model: str, target: str, version: str) -> dict:
     """List URL for a specific to DELL model and version and update target
 
     Args:
@@ -96,7 +101,7 @@ def _hardware_inventory_root() -> Path:
     return Path(os.path.expandvars(str(configured))).expanduser().resolve()
 
 
-def _collection_directory(collection: Optional[str]) -> Path:
+def _collection_directory(collection: str | None) -> Path:
     root = _hardware_inventory_root()
     if collection is None:
         return root
@@ -134,7 +139,7 @@ def _safe_redfish_location(server_id: str, location: str) -> str:
     return value
 
 
-def _validate_remote_url(value: Any, *, label: str) -> Optional[str]:
+def _validate_remote_url(value: object, *, label: str) -> str | None:
     if not isinstance(value, str) or not value.strip():
         return f"{label} must be a non-empty HTTP or HTTPS URL"
     url = value.strip()
@@ -165,7 +170,7 @@ def _atomic_write(path: Path, payload: bytes) -> None:
         raise
 
 
-def _xml_details(payload: Any) -> tuple[bytes, str, str]:
+def _xml_details(payload: object) -> tuple[bytes, str, str]:
     if isinstance(payload, bytes):
         xml_bytes = payload
     elif isinstance(payload, str):
@@ -238,7 +243,7 @@ def _xml_system_service_tags(xml_bytes: bytes) -> set[str]:
     return values
 
 
-def _validate_xml_identity(xml_bytes: bytes, identity: Dict[str, Any]) -> Dict[str, Any]:
+def _validate_xml_identity(xml_bytes: bytes, identity: dict[str, Any]) -> dict[str, Any]:
     """Bind downloaded or cached XML to the live BMC identity before it is used."""
     # A Dell chassis serial and its service tag can be different identifiers.
     keys = (
@@ -267,7 +272,7 @@ def _validate_xml_identity(xml_bytes: bytes, identity: Dict[str, Any]) -> Dict[s
     }
 
 
-def _task_document(payload: Any) -> Optional[Dict[str, Any]]:
+def _task_document(payload: object) -> dict[str, Any] | None:
     if isinstance(payload, bytes):
         try:
             payload = payload.decode("utf-8")
@@ -282,7 +287,7 @@ def _task_document(payload: Any) -> Optional[Dict[str, Any]]:
     return payload if isinstance(payload, dict) else None
 
 
-def _task_state(document: Optional[Dict[str, Any]]) -> Optional[str]:
+def _task_state(document: dict[str, Any] | None) -> str | None:
     if not document:
         return None
     candidates = [
@@ -301,7 +306,7 @@ def _task_state(document: Optional[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
-def _document_location(document: Optional[Dict[str, Any]]) -> Optional[str]:
+def _document_location(document: dict[str, Any] | None) -> str | None:
     if not document:
         return None
     for key in ("TaskMonitor", "Location", "location", "@odata.id"):
@@ -311,7 +316,7 @@ def _document_location(document: Optional[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
-def _retry_delay(response: Dict[str, Any], fallback: float) -> float:
+def _retry_delay(response: dict[str, Any], fallback: float) -> float:
     raw = _response_header(response, "Retry-After")
     if raw:
         try:
@@ -385,10 +390,10 @@ def _success_metadata(
     *,
     cached: bool,
     include_xml: bool,
-    xml_text: Optional[str] = None,
-    identity: Optional[Dict[str, Any]] = None,
-    xml_identity: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    xml_text: str | None = None,
+    identity: dict[str, Any] | None = None,
+    xml_identity: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     host_config = cfg.CONFIG.get(server_id, {})
     try:
         modified = (
@@ -398,7 +403,7 @@ def _success_metadata(
         )
     except OSError:
         modified = _utc_now()
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "server_id": server_id,
         "status": "success",
         "vendor": cfg.normalize_vendor(host_config.get("vendor")) or "dell",
@@ -417,7 +422,7 @@ def _success_metadata(
     return result
 
 
-async def _dell_identity(server_id: str, handler: Any) -> Dict[str, Any]:
+async def _dell_identity(server_id: str, handler: BaseVendorHandler) -> dict[str, Any]:
     response = await _redfish_call(server_id, "GET", handler.SYSTEM_PATH)
     if response.get("status") != "success" or not isinstance(response.get("data"), dict):
         return {
@@ -465,7 +470,7 @@ async def _dell_identity(server_id: str, handler: Any) -> Dict[str, Any]:
     return {**identity, "status": "verified" if expected or expected_tag else "observed"}
 
 
-async def _discover_hardware_export_action(server_id: str, handler: Any) -> Optional[Dict[str, Any]]:
+async def _discover_hardware_export_action(server_id: str, handler: BaseVendorHandler) -> dict[str, Any] | None:
     """Discover the advertised action after a definitive legacy-path 404."""
     manager = await _redfish_call(server_id, "GET", handler.MANAGER_PATH)
     if manager.get("status") != "success" or not isinstance(manager.get("data"), dict):
@@ -496,7 +501,7 @@ async def _export_hardware_inventory_single(
     include_xml: bool,
     poll_interval_seconds: float,
     timeout_seconds: float,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     path = destination / _safe_server_filename(server_id)
     submission_started = False
     try:
@@ -610,7 +615,7 @@ async def _export_hardware_inventory_single(
         return result
 
 
-def _manifest_result(result: Dict[str, Any]) -> Dict[str, Any]:
+def _manifest_result(result: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in result.items() if key != "data"}
 
 
@@ -621,14 +626,14 @@ def _manifest_result(result: Dict[str, Any]) -> Dict[str, Any]:
     )
 )
 async def export_hardware_inventory_xml(
-    server_ids: List[str],
-    collection: Optional[str] = None,
+    server_ids: list[str],
+    collection: str | None = None,
     refresh: bool = False,
-    concurrency: Optional[int] = None,
+    concurrency: int | None = None,
     include_xml: bool = False,
-    poll_interval_seconds: Optional[float] = None,
-    timeout_seconds: Optional[float] = None,
-) -> Dict[str, Any]:
+    poll_interval_seconds: float | None = None,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
     """Export Dell XML under the configured, constrained inventory root."""
     _load_config()
     if concurrency is None:
@@ -664,7 +669,7 @@ async def export_hardware_inventory_xml(
     async with lock:
         semaphore = asyncio.Semaphore(concurrency)
 
-        async def run(server_id: str) -> Dict[str, Any]:
+        async def run(server_id: str) -> dict[str, Any]:
             async with semaphore:
                 return await _export_hardware_inventory_single(
                     server_id,
@@ -727,7 +732,7 @@ async def export_hardware_inventory_xml(
         "successful result; prefer export_hardware_inventory_xml for fleet exports."
     )
 )
-async def dell_export_hardware_inventory(server_ids: List[str]) -> List[Dict]:
+async def dell_export_hardware_inventory(server_ids: list[str]) -> list[dict]:
     """Compatibility wrapper retaining the historical list-with-raw-XML result."""
     result = await export_hardware_inventory_xml(server_ids, include_xml=True)
     if "results" in result:
@@ -739,7 +744,7 @@ async def dell_export_hardware_inventory(server_ids: List[str]) -> List[Dict]:
 
 
 @mcp.tool(description="Update DELL IDRAC or BIOS firmware for a specific model and version and target")
-async def dell_update_firmware(server_id: str, url: str, reboot: bool = False) -> Dict:
+async def dell_update_firmware(server_id: str, url: str, reboot: bool = False) -> dict:
     """Update DELL IDRAC or BIOS firmware using DMTF SimpleUpdate action.
 
     Uses the standard Redfish SimpleUpdate action with ImageURI for remote firmware files.

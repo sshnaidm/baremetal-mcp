@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Read-only, detailed HPE iLO Redfish hardware snapshot export."""
 
 from __future__ import annotations
@@ -6,11 +5,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import quote, urlsplit
 
 import config as cfg
-from config import mcp, _load_config
+from config import _load_config, mcp
 from handlers import HPE
 from helpers import _get_handler, _redfish_call
 from tools.dell import _atomic_write, _collection_directory, _utc_now
@@ -18,10 +17,10 @@ from tools.dell import _atomic_write, _collection_directory, _utc_now
 _MAX_HOSTS = 64
 _MAX_MEMBERS = 256
 _MAX_PAGES = 8
-_COLLECTION_LOCKS: Dict[str, asyncio.Lock] = {}
+_COLLECTION_LOCKS: dict[str, asyncio.Lock] = {}
 
 
-def _path(value: Any) -> Optional[str]:
+def _path(value: object) -> str | None:
     """Accept only origin-relative Redfish resource paths from a BMC response."""
     if isinstance(value, dict):
         value = value.get("@odata.id")
@@ -35,27 +34,27 @@ def _path(value: Any) -> Optional[str]:
     return value
 
 
-def _link(owner: Dict[str, Any], key: str) -> Optional[str]:
+def _link(owner: dict[str, Any], key: str) -> str | None:
     return _path(owner.get(key))
 
 
-def _members_path(owner: Dict[str, Any], key: str) -> Optional[str]:
+def _members_path(owner: dict[str, Any], key: str) -> str | None:
     return _link(owner, key) or _path((owner.get("Links") or {}).get(key))
 
 
-def _is_expanded(member: Any) -> bool:
+def _is_expanded(member: object) -> bool:
     return isinstance(member, dict) and bool(
         set(member) - {"@odata.id", "@odata.context", "@odata.type", "@odata.etag"}
     )
 
 
 class _Reader:
-    def __init__(self, server_id: str, concurrency: int = 4):
+    def __init__(self, server_id: str, concurrency: int = 4) -> None:
         self.server_id = server_id
         self.semaphore = asyncio.Semaphore(concurrency)
-        self.cache: Dict[str, Dict[str, Any]] = {}
-        self.errors: List[Dict[str, str]] = []
-        self.warnings: List[Dict[str, str]] = []
+        self.cache: dict[str, dict[str, Any]] = {}
+        self.errors: list[dict[str, str]] = []
+        self.warnings: list[dict[str, str]] = []
         self.requests = 0
         self.expanded_collections = 0
         self.member_fallbacks = 0
@@ -63,9 +62,7 @@ class _Reader:
     def issue(self, path: str, message: str, *, required: bool) -> None:
         (self.errors if required else self.warnings).append({"path": path, "message": message})
 
-    async def get(
-        self, path: Optional[str], *, required: bool = False, report: bool = True
-    ) -> Optional[Dict[str, Any]]:
+    async def get(self, path: str | None, *, required: bool = False, report: bool = True) -> dict[str, Any] | None:
         safe_path = _path(path)
         if not safe_path:
             if report:
@@ -84,14 +81,14 @@ class _Reader:
         self.cache[safe_path] = data
         return data
 
-    async def links(self, values: Any, *, required: bool = False) -> List[Dict[str, Any]]:
+    async def links(self, values: object, *, required: bool = False) -> list[dict[str, Any]]:
         if not isinstance(values, list):
             return []
         if len(values) > _MAX_MEMBERS:
             self.issue("Members", f"More than {_MAX_MEMBERS} linked resources", required=True)
             return []
 
-        async def resolve(value: Any) -> Optional[Dict[str, Any]]:
+        async def resolve(value: object) -> dict[str, Any] | None:
             if _is_expanded(value):
                 return value
             path = _path(value)
@@ -104,7 +101,7 @@ class _Reader:
         resolved = await asyncio.gather(*(resolve(value) for value in values))
         return [value for value in resolved if value is not None]
 
-    async def collection(self, path: Optional[str], *, required: bool = False) -> List[Dict[str, Any]]:
+    async def collection(self, path: str | None, *, required: bool = False) -> list[dict[str, Any]]:
         safe_path = _path(path)
         if not safe_path:
             self.issue(str(path), "Collection path not advertised", required=required)
@@ -119,7 +116,7 @@ class _Reader:
         else:
             self.expanded_collections += 1
 
-        members: List[Dict[str, Any]] = []
+        members: list[dict[str, Any]] = []
         seen = set()
         pages = 0
         while page is not None:
@@ -152,7 +149,7 @@ class _Reader:
         return members
 
 
-def _memory_summary(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _memory_summary(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
     slots = []
     for memory in members:
         state = (memory.get("Status") or {}).get("State")
@@ -175,7 +172,7 @@ def _memory_summary(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return slots
 
 
-def _pci_summary(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _pci_summary(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
     slots = []
     for slot in members:
         operational = (slot.get("Status") or {}).get("OperationalStatus") or []
@@ -194,7 +191,7 @@ def _pci_summary(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return slots
 
 
-def _network_summary(adapters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _network_summary(adapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ports = []
     for item in adapters:
         adapter = item["adapter"]
@@ -216,7 +213,7 @@ def _network_summary(adapters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return ports
 
 
-def _base_network_summary(adapters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _base_network_summary(adapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ports = []
     for adapter in adapters:
         for index, port in enumerate(adapter.get("PhysicalPorts") or []):
@@ -238,7 +235,7 @@ def _base_network_summary(adapters: List[Dict[str, Any]]) -> List[Dict[str, Any]
     return ports
 
 
-async def _smart_storage(reader: _Reader, path: str) -> Optional[Dict[str, Any]]:
+async def _smart_storage(reader: _Reader, path: str) -> dict[str, Any] | None:
     """Read the advertised HPE controller tree when standard Storage is empty."""
     root = await reader.get(path, required=True)
     if root is None:
@@ -251,7 +248,7 @@ async def _smart_storage(reader: _Reader, path: str) -> Optional[Dict[str, Any]]
         return None
     groups = await asyncio.gather(*(reader.collection(link, required=True) for link in controller_paths))
 
-    async def details(controller: Dict[str, Any]) -> Dict[str, Any]:
+    async def details(controller: dict[str, Any]) -> dict[str, Any]:
         names = [
             key
             for key in ("PhysicalDrives", "LogicalDrives", "StorageEnclosures", "UnconfiguredDrives")
@@ -266,7 +263,7 @@ async def _smart_storage(reader: _Reader, path: str) -> Optional[Dict[str, Any]]
     return {"root": root, "controllers": controllers}
 
 
-async def _collect(server_id: str, *, include_firmware: bool = False) -> Dict[str, Any]:
+async def _collect(server_id: str, *, include_firmware: bool = False) -> dict[str, Any]:
     reader = _Reader(server_id)
     handler = await _get_handler(server_id)
     if not isinstance(handler, HPE):
@@ -315,7 +312,7 @@ async def _collect(server_id: str, *, include_firmware: bool = False) -> Dict[st
     values = await asyncio.gather(*tasks.values())
     sections = dict(zip(names, values))
 
-    async def adapter_details(adapter: Dict[str, Any]) -> Dict[str, Any]:
+    async def adapter_details(adapter: dict[str, Any]) -> dict[str, Any]:
         ports_path = _members_path(adapter, "NetworkPorts") or _members_path(adapter, "Ports")
         functions_path = _members_path(adapter, "NetworkDeviceFunctions")
         ports, functions = await asyncio.gather(
@@ -324,12 +321,12 @@ async def _collect(server_id: str, *, include_firmware: bool = False) -> Dict[st
         )
         return {"adapter": adapter, "ports": ports, "device_functions": functions}
 
-    async def pcie_details(device: Dict[str, Any]) -> Dict[str, Any]:
+    async def pcie_details(device: dict[str, Any]) -> dict[str, Any]:
         functions_path = _members_path(device, "PCIeFunctions")
         functions = await reader.collection(functions_path, required=bool(functions_path))
         return {"device": device, "functions": functions}
 
-    async def storage_details(storage: Dict[str, Any]) -> Dict[str, Any]:
+    async def storage_details(storage: dict[str, Any]) -> dict[str, Any]:
         drives, volumes = await asyncio.gather(
             reader.links(storage.get("Drives") or [], required=True),
             reader.collection(_members_path(storage, "Volumes"), required=bool(_members_path(storage, "Volumes"))),
@@ -423,11 +420,11 @@ async def _collect(server_id: str, *, include_firmware: bool = False) -> Dict[st
     )
 )
 async def export_hpe_hardware_inventory(
-    server_ids: List[str],
-    collection: Optional[str] = None,
-    concurrency: Optional[int] = None,
+    server_ids: list[str],
+    collection: str | None = None,
+    concurrency: int | None = None,
     include_firmware: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Persist identity-checked HPE hardware snapshots below HARDWARE_INVENTORY_DIR."""
     _load_config()
     if not isinstance(server_ids, list) or not server_ids or len(server_ids) > _MAX_HOSTS:
@@ -450,7 +447,7 @@ async def export_hpe_hardware_inventory(
     async with lock:
         semaphore = asyncio.Semaphore(concurrency)
 
-        async def run(server_id: str) -> Dict[str, Any]:
+        async def run(server_id: str) -> dict[str, Any]:
             async with semaphore:
                 try:
                     result = await _collect(server_id, include_firmware=include_firmware)

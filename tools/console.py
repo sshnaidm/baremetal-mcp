@@ -1,18 +1,17 @@
-#!/usr/bin/env python3
 """BMC graphical-console capture and explicitly authorized input tools."""
 
 import asyncio
 import io
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import time
-from typing import Any, Dict, Literal
 import uuid
 import weakref
+from pathlib import Path
+from typing import Any, Literal
 
 from fastmcp.tools import ToolResult
 from fastmcp.utilities.types import Image
@@ -23,8 +22,8 @@ from config import CONFIG, _load_config, mcp
 from helpers import _configured_port
 
 _WORKER_PATH = Path(__file__).with_name("vnc_capture_worker.py")
-_ACTIVE_PAGERS: Dict[str, Dict[str, Any]] = {}
-_CONSOLE_PREFLIGHTS: Dict[str, Dict[str, Any]] = {}
+_ACTIVE_PAGERS: dict[str, dict[str, Any]] = {}
+_CONSOLE_PREFLIGHTS: dict[str, dict[str, Any]] = {}
 _CONSOLE_LOCKS: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
 _PAGER_ACTIONS = {
     "refresh",
@@ -37,11 +36,11 @@ _PAGER_ACTIONS = {
 }
 
 
-def _error(server_id: str, message: str) -> Dict[str, Any]:
+def _error(server_id: str, message: str) -> dict[str, Any]:
     return {"server_id": server_id, "status": "error", "message": message}
 
 
-def _console_settings(server_id: str):
+def _console_settings(server_id: str) -> tuple[dict[str, object] | None, dict[str, object] | None]:
     """Return validated VNC connection settings or a structured error."""
     _load_config()
 
@@ -84,9 +83,9 @@ def _run_vnc_worker_sync(
     server_id: str,
     mode: str,
     *,
-    mode_args=(),
+    mode_args: tuple[str | int | float, ...] = (),
     command: str | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run one VNC operation in an isolated child process."""
     settings, error = _console_settings(server_id)
     if error:
@@ -165,7 +164,7 @@ def _run_vnc_worker_sync(
         output_path.unlink(missing_ok=True)
 
 
-def _capture_vnc_console_sync(server_id: str) -> Dict[str, Any]:
+def _capture_vnc_console_sync(server_id: str) -> dict[str, Any]:
     """Capture a configured VNC console in an isolated child process."""
     return _run_vnc_worker_sync(server_id, "capture")
 
@@ -175,7 +174,7 @@ def _worker_stage(output: str) -> str | None:
     return stages[-1] if stages else None
 
 
-def _input_state(mode: str, stage: str | None) -> Dict[str, Any]:
+def _input_state(mode: str, stage: str | None) -> dict[str, Any]:
     if mode == "capture":
         return {"input_sent": False, "retry_safe": True}
     if mode == "run":
@@ -207,7 +206,7 @@ def _input_state(mode: str, stage: str | None) -> Dict[str, Any]:
     return {}
 
 
-def _validate_command(server_id: str, command: str) -> Dict[str, Any] | None:
+def _validate_command(server_id: str, command: str) -> dict[str, Any] | None:
     if not isinstance(command, str) or not command.strip():
         return _error(server_id, "Console command must not be empty")
     if len(command) > 4096:
@@ -217,7 +216,7 @@ def _validate_command(server_id: str, command: str) -> Dict[str, Any] | None:
     return None
 
 
-def _validate_wait(server_id: str, wait_seconds: float):
+def _validate_wait(server_id: str, wait_seconds: float) -> tuple[float | None, dict[str, object] | None]:
     try:
         wait = float(wait_seconds)
     except (TypeError, ValueError):
@@ -227,7 +226,7 @@ def _validate_wait(server_id: str, wait_seconds: float):
     return wait, None
 
 
-def _run_console_command_sync(server_id: str, command: str, wait_seconds: float) -> Dict[str, Any]:
+def _run_console_command_sync(server_id: str, command: str, wait_seconds: float) -> dict[str, Any]:
     """Type one command and capture the first forced-pager screen."""
     error = _validate_command(server_id, command)
     if error:
@@ -247,7 +246,7 @@ def _run_console_command_sync(server_id: str, command: str, wait_seconds: float)
     )
 
 
-def _pager_action_sync(server_id: str, action: str, wait_seconds: float) -> Dict[str, Any]:
+def _pager_action_sync(server_id: str, action: str, wait_seconds: float) -> dict[str, Any]:
     """Send one bounded less-pager action and capture the resulting screen."""
     if action not in _PAGER_ACTIONS:
         return _error(server_id, f"Unsupported console pager action: {action}")
@@ -257,7 +256,7 @@ def _pager_action_sync(server_id: str, action: str, wait_seconds: float) -> Dict
     return _run_vnc_worker_sync(server_id, "pager", mode_args=(action, wait))
 
 
-async def _capture_vnc_console(server_id: str) -> Dict[str, Any]:
+async def _capture_vnc_console(server_id: str) -> dict[str, Any]:
     """Run blocking VNC capture without blocking the MCP event loop."""
     return await asyncio.to_thread(_capture_vnc_console_sync, server_id)
 
@@ -266,17 +265,17 @@ async def _run_console_command(
     server_id: str,
     command: str,
     wait_seconds: float,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run blocking console command setup without blocking the MCP event loop."""
     return await asyncio.to_thread(_run_console_command_sync, server_id, command, wait_seconds)
 
 
-async def _pager_action(server_id: str, action: str, wait_seconds: float) -> Dict[str, Any]:
+async def _pager_action(server_id: str, action: str, wait_seconds: float) -> dict[str, Any]:
     """Run a blocking pager action without blocking the MCP event loop."""
     return await asyncio.to_thread(_pager_action_sync, server_id, action, wait_seconds)
 
 
-def _tool_result(result: Dict[str, Any]) -> ToolResult:
+def _tool_result(result: dict[str, Any]) -> ToolResult:
     image_data = result.pop("image", None)
     summary = json.dumps(result)
     content = [summary]
@@ -300,7 +299,7 @@ def _session_ttl() -> int:
         return 300
 
 
-def _expire_console_state(server_id: str) -> Dict[str, Any] | None:
+def _expire_console_state(server_id: str) -> dict[str, Any] | None:
     now = time.monotonic()
     session = _ACTIVE_PAGERS.get(server_id)
     if session and session.get("expires_at", 0) <= now:
@@ -314,7 +313,7 @@ def _expire_console_state(server_id: str) -> Dict[str, Any] | None:
     return session
 
 
-def _new_preflight(server_id: str) -> Dict[str, Any]:
+def _new_preflight(server_id: str) -> dict[str, Any]:
     ttl = _session_ttl()
     value = {
         "token": uuid.uuid4().hex,
@@ -555,7 +554,7 @@ async def console_pager_action(
         "Expired pager state is retained as remotely unknown until visually authorized recovery."
     )
 )
-async def get_console_session_status(server_id: str) -> Dict[str, Any]:
+async def get_console_session_status(server_id: str) -> dict[str, Any]:
     async with _console_lock(server_id):
         session = _expire_console_state(server_id)
         preflight = _CONSOLE_PREFLIGHTS.get(server_id)

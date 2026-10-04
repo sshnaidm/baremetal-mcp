@@ -1,15 +1,20 @@
 """Tests for BMC VNC console capture and command paging."""
 
-from pathlib import Path
+from __future__ import annotations
+
 import subprocess
 import time
+from collections.abc import Iterator
+from pathlib import Path
+from types import ModuleType
+from typing import Any
 
-from PIL import Image as PILImage
 import pytest
+from PIL import Image as PILImage
 
 
 @pytest.fixture(autouse=True)
-def _clear_console_sessions():
+def _clear_console_sessions() -> Iterator[None]:
     from tools.console import _ACTIVE_PAGERS, _CONSOLE_LOCKS, _CONSOLE_PREFLIGHTS
 
     _ACTIVE_PAGERS.clear()
@@ -21,7 +26,9 @@ def _clear_console_sessions():
     _CONSOLE_LOCKS.clear()
 
 
-def _configure_console(config, *, vnc_port=5901, secrets=None):
+def _configure_console(
+    config: ModuleType, *, vnc_port: int | None = 5901, secrets: dict[str, Any] | None = None
+) -> None:
     config.CONFIG["console-host"] = {
         "bmc_ip": "10.0.0.20",
         "vendor": "dell",
@@ -30,7 +37,7 @@ def _configure_console(config, *, vnc_port=5901, secrets=None):
     config.SECRETS["console-host"] = {"vnc_password": "not-real"} if secrets is None else secrets
 
 
-def _allow_input(token="confirmed-screen"):
+def _allow_input(token: str = "confirmed-screen") -> str:
     from tools.console import _CONSOLE_PREFLIGHTS
 
     _CONSOLE_PREFLIGHTS["console-host"] = {
@@ -42,14 +49,14 @@ def _allow_input(token="confirmed-screen"):
 
 
 class TestCaptureVncConsoleSync:
-    def test_unknown_server(self):
+    def test_unknown_server(self) -> None:
         from tools.console import _capture_vnc_console_sync
 
         result = _capture_vnc_console_sync("missing")
         assert result["status"] == "error"
         assert "Unknown server" in result["message"]
 
-    def test_requires_vnc_configuration(self):
+    def test_requires_vnc_configuration(self) -> None:
         import config
 
         config.CONFIG["console-host"] = {"bmc_ip": "10.0.0.20"}
@@ -59,7 +66,7 @@ class TestCaptureVncConsoleSync:
         assert result["status"] == "error"
         assert "No VNC console" in result["message"]
 
-    def test_requires_separate_vnc_password(self):
+    def test_requires_separate_vnc_password(self) -> None:
         import config
 
         _configure_console(config, secrets={"username": "root", "password": "redfish-only"})
@@ -69,7 +76,7 @@ class TestCaptureVncConsoleSync:
         assert result["status"] == "error"
         assert "vnc_password" in result["message"]
 
-    def test_rejects_invalid_port(self):
+    def test_rejects_invalid_port(self) -> None:
         import config
 
         _configure_console(config, vnc_port=70000)
@@ -79,12 +86,12 @@ class TestCaptureVncConsoleSync:
         assert result["status"] == "error"
         assert "vnc_port" in result["message"]
 
-    def test_success_returns_png_without_password_in_argv(self, monkeypatch):
+    def test_success_returns_png_without_password_in_argv(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         _configure_console(config)
 
-        def fake_run(args, **kwargs):
+        def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             assert "not-real" not in args
             assert kwargs["input"] == "not-real\n"
             assert args[2] == "capture"
@@ -101,12 +108,12 @@ class TestCaptureVncConsoleSync:
         assert result["height"] == 768
         assert result["image"].startswith(b"\x89PNG")
 
-    def test_timeout_is_reported(self, monkeypatch):
+    def test_timeout_is_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         _configure_console(config)
 
-        def fake_run(*args, **kwargs):
+        def fake_run(*args: object, **kwargs: object) -> None:
             raise subprocess.TimeoutExpired("worker", 9)
 
         monkeypatch.setattr("tools.console.subprocess.run", fake_run)
@@ -116,12 +123,12 @@ class TestCaptureVncConsoleSync:
         assert result["status"] == "error"
         assert result["message"] == "VNC capture operation timed out"
 
-    def test_worker_error_redacts_password(self, monkeypatch):
+    def test_worker_error_redacts_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         _configure_console(config)
 
-        def fake_run(args, **kwargs):
+        def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(args, 1, stdout="", stderr="failed with not-real")
 
         monkeypatch.setattr("tools.console.subprocess.run", fake_run)
@@ -134,10 +141,10 @@ class TestCaptureVncConsoleSync:
 
 
 class TestCaptureConsoleScreenTool:
-    async def test_returns_mcp_image_content(self, monkeypatch):
+    async def test_returns_mcp_image_content(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from tools.console import capture_console_screen
 
-        async def fake_capture(server_id):
+        async def fake_capture(server_id: str) -> dict[str, Any]:
             return {
                 "server_id": server_id,
                 "status": "success",
@@ -157,10 +164,10 @@ class TestCaptureConsoleScreenTool:
         assert result.content[1].type == "image"
         assert result.content[1].mimeType == "image/png"
 
-    async def test_returns_structured_error(self, monkeypatch):
+    async def test_returns_structured_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from tools.console import capture_console_screen
 
-        async def fake_capture(server_id):
+        async def fake_capture(server_id: str) -> dict[str, Any]:
             return {"server_id": server_id, "status": "error", "message": "not configured"}
 
         monkeypatch.setattr("tools.console._capture_vnc_console", fake_capture)
@@ -171,19 +178,19 @@ class TestCaptureConsoleScreenTool:
 
 
 class TestRunConsoleCommandSync:
-    def test_rejects_empty_multiline_and_control_characters(self):
+    def test_rejects_empty_multiline_and_control_characters(self) -> None:
         from tools.console import _run_console_command_sync
 
         for command in ("", "echo one\necho two", "echo\ttab"):
             result = _run_console_command_sync("console-host", command, 1)
             assert result["status"] == "error"
 
-    def test_command_and_password_are_not_in_argv(self, monkeypatch):
+    def test_command_and_password_are_not_in_argv(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         _configure_console(config)
 
-        def fake_run(args, **kwargs):
+        def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             assert args[2] == "run"
             assert "not-real" not in args
             assert "printf hello" not in args
@@ -200,12 +207,12 @@ class TestRunConsoleCommandSync:
         assert result["status"] == "success"
         assert result["operation"] == "run"
 
-    def test_invalid_png_preserves_sent_stage(self, monkeypatch):
+    def test_invalid_png_preserves_sent_stage(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         _configure_console(config)
 
-        def fake_run(args, **_kwargs):
+        def fake_run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
             Path(args[5]).write_bytes(b"not-a-png")
             return subprocess.CompletedProcess(args, 0, stdout="BM_VNC_STAGE=sent\n", stderr="")
 
@@ -219,12 +226,12 @@ class TestRunConsoleCommandSync:
         assert result["input_state"] == "sent_unconfirmed"
         assert result["retry_safe"] is False
 
-    def test_png_decode_failure_preserves_sent_stage(self, monkeypatch):
+    def test_png_decode_failure_preserves_sent_stage(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         _configure_console(config)
 
-        def fake_run(args, **_kwargs):
+        def fake_run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
             Path(args[5]).write_bytes(b"\x89PNG\r\n\x1a\nnot-a-real-image")
             return subprocess.CompletedProcess(args, 0, stdout="BM_VNC_STAGE=sent\n", stderr="")
 
@@ -237,12 +244,12 @@ class TestRunConsoleCommandSync:
         assert result["command_sent"] is True
         assert result["retry_safe"] is False
 
-    def test_png_read_failure_preserves_pager_input_stage(self, monkeypatch):
+    def test_png_read_failure_preserves_pager_input_stage(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         _configure_console(config)
 
-        def fake_run(args, **_kwargs):
+        def fake_run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
                 args,
                 0,
@@ -250,7 +257,7 @@ class TestRunConsoleCommandSync:
                 stderr="",
             )
 
-        def fail_read(_path):
+        def fail_read(_path: str) -> None:
             raise OSError("simulated read failure")
 
         monkeypatch.setattr("tools.console.subprocess.run", fake_run)
@@ -265,10 +272,10 @@ class TestRunConsoleCommandSync:
 
 
 class TestConsoleCommandTools:
-    async def test_run_returns_guarded_session_and_image(self, monkeypatch):
+    async def test_run_returns_guarded_session_and_image(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from tools.console import run_console_command
 
-        async def fake_run(server_id, command, wait_seconds):
+        async def fake_run(server_id: str, command: str, wait_seconds: float) -> dict[str, Any]:
             return {
                 "server_id": server_id,
                 "status": "success",
@@ -287,10 +294,10 @@ class TestConsoleCommandTools:
         assert len(result.structured_content["session_id"]) == 32
         assert result.content[1].type == "image"
 
-    async def test_second_run_is_blocked_while_pager_active(self, monkeypatch):
+    async def test_second_run_is_blocked_while_pager_active(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from tools.console import run_console_command
 
-        async def fake_run(*args):
+        async def fake_run(*args: object) -> dict[str, Any]:
             return {
                 "server_id": args[0],
                 "status": "success",
@@ -303,17 +310,17 @@ class TestConsoleCommandTools:
         assert result.structured_content["status"] == "error"
         assert "already active" in result.structured_content["message"]
 
-    async def test_pager_actions_require_token_and_quit_session(self, monkeypatch):
+    async def test_pager_actions_require_token_and_quit_session(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from tools.console import console_pager_action, run_console_command
 
-        async def fake_run(*args):
+        async def fake_run(*args: object) -> dict[str, Any]:
             return {
                 "server_id": args[0],
                 "status": "success",
                 "image": b"\x89PNG\r\n\x1a\nimage-data",
             }
 
-        async def fake_action(server_id, action, wait):
+        async def fake_action(server_id: str, action: object, wait: float) -> dict[str, Any]:
             return {
                 "server_id": server_id,
                 "status": "success",
@@ -340,13 +347,13 @@ class TestConsoleCommandTools:
         no_session = await console_pager_action("console-host", token, "refresh")
         assert no_session.structured_content["status"] == "error"
 
-    async def test_abandon_clears_session_without_vnc_action(self, monkeypatch):
+    async def test_abandon_clears_session_without_vnc_action(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from tools.console import console_pager_action, run_console_command
 
-        async def fake_run(*args):
+        async def fake_run(*args: object) -> dict[str, Any]:
             return {"server_id": args[0], "status": "success"}
 
-        async def fail_action(*args):
+        async def fail_action(*args: object) -> None:
             raise AssertionError("abandon must not send a VNC key")
 
         monkeypatch.setattr("tools.console._run_console_command", fake_run)
@@ -358,12 +365,12 @@ class TestConsoleCommandTools:
         assert result.structured_content["pager_active"] is False
         assert "no VNC key" in result.structured_content["message"]
 
-    async def test_command_requires_and_consumes_recent_screen_token(self, monkeypatch):
+    async def test_command_requires_and_consumes_recent_screen_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from tools.console import run_console_command
 
         called = False
 
-        async def fake_run(*args):
+        async def fake_run(*args: object) -> dict[str, Any]:
             nonlocal called
             called = True
             return {"server_id": args[0], "status": "success"}
@@ -379,7 +386,7 @@ class TestConsoleCommandTools:
         assert sent.structured_content["command_sent"] is True
         assert called is True
 
-    async def test_invalid_command_does_not_consume_screen_token(self):
+    async def test_invalid_command_does_not_consume_screen_token(self) -> None:
         from tools.console import _CONSOLE_PREFLIGHTS, run_console_command
 
         token = _allow_input()
@@ -389,7 +396,7 @@ class TestConsoleCommandTools:
         assert result.structured_content["retry_safe"] is True
         assert _CONSOLE_PREFLIGHTS["console-host"]["token"] == token
 
-    async def test_expired_pager_is_not_given_blind_input(self, monkeypatch):
+    async def test_expired_pager_is_not_given_blind_input(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from tools.console import _ACTIVE_PAGERS, console_pager_action
 
         _ACTIVE_PAGERS["console-host"] = {
@@ -398,7 +405,7 @@ class TestConsoleCommandTools:
             "expires_at": time.monotonic() - 1,
         }
 
-        async def fail_action(*args):
+        async def fail_action(*args: object) -> None:
             raise AssertionError("expired session must not send input")
 
         monkeypatch.setattr("tools.console._pager_action", fail_action)
@@ -406,8 +413,14 @@ class TestConsoleCommandTools:
         assert result.structured_content["status"] == "error"
         assert result.structured_content["input_sent"] is False
 
-    async def test_expired_pager_blocks_commands_until_visually_authorized_quit(self, monkeypatch):
-        from tools.console import _ACTIVE_PAGERS, console_pager_action, run_console_command
+    async def test_expired_pager_blocks_commands_until_visually_authorized_quit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tools.console import (
+            _ACTIVE_PAGERS,
+            console_pager_action,
+            run_console_command,
+        )
 
         _ACTIVE_PAGERS["console-host"] = {
             "session_id": "old",
@@ -417,12 +430,12 @@ class TestConsoleCommandTools:
         token = _allow_input()
         command_called = False
 
-        async def fail_command(*_args):
+        async def fail_command(*_args: object) -> None:
             nonlocal command_called
             command_called = True
             raise AssertionError("an expired remote pager must block a new command")
 
-        async def fake_action(server_id, action, _wait):
+        async def fake_action(server_id: str, action: object, _wait: float) -> dict[str, Any]:
             assert action == "quit"
             return {"server_id": server_id, "status": "success", "input_sent": True}
 
@@ -445,7 +458,7 @@ class TestConsoleCommandTools:
         assert "console-host" not in _ACTIVE_PAGERS
 
 
-def test_worker_command_is_shell_quoted_and_forces_restricted_less():
+def test_worker_command_is_shell_quoted_and_forces_restricted_less() -> None:
     from tools.vnc_capture_worker import _command_line
 
     line = _command_line("printf '%s\\n' \"$HOME\"")
@@ -456,19 +469,19 @@ def test_worker_command_is_shell_quoted_and_forces_restricted_less():
     assert subprocess.run(["sh", "-n", "-c", line], check=False).returncode == 0
 
 
-def test_worker_types_minus_as_named_key():
+def test_worker_types_minus_as_named_key() -> None:
     from tools.vnc_capture_worker import _type_text
 
     class Client:
-        def __init__(self):
+        def __init__(self) -> None:
             self.keys = []
             self.pauses = []
             self.factory = type("Factory", (), {"force_caps": False})()
 
-        def keyPress(self, key):
+        def keyPress(self, key: str) -> None:
             self.keys.append(key)
 
-        def pause(self, delay):
+        def pause(self, delay: float) -> None:
             self.pauses.append(delay)
 
     client = Client()
@@ -478,7 +491,7 @@ def test_worker_types_minus_as_named_key():
     assert client.factory.force_caps is True
 
 
-def test_worker_builds_ipv4_and_ipv6_addresses():
+def test_worker_builds_ipv4_and_ipv6_addresses() -> None:
     from tools.vnc_capture_worker import _server_address
 
     assert _server_address("10.0.0.20", 5901) == "10.0.0.20::5901"

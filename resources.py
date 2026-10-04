@@ -1,9 +1,6 @@
-#!/usr/bin/env python3
 """
 MCP Resources for host configuration access.
 """
-
-from typing import List
 
 import config as cfg
 
@@ -52,7 +49,7 @@ def get_host_details(server_id: str) -> dict:
 
 
 @mcp.resource("hosts://ids/{server_ids}")
-def get_multiple_host_details(server_ids: str) -> List[dict]:
+def get_multiple_host_details(server_ids: str) -> list[dict]:
     """Get configurations for multiple servers.
 
     Args
@@ -66,7 +63,7 @@ def get_multiple_host_details(server_ids: str) -> List[dict]:
     """
     _load_config()
     ids = [sid.strip() for sid in server_ids.split(",") if sid.strip()]
-    hosts: List[dict] = []
+    hosts: list[dict] = []
     for sid in ids:
         if sid not in cfg.CONFIG:
             raise ValueError(f"Server '{sid}' not found in configuration.")
@@ -75,7 +72,7 @@ def get_multiple_host_details(server_ids: str) -> List[dict]:
 
 
 @mcp.resource("hosts://lab/{lab}")
-def get_all_hosts_from_lab(lab: str) -> List[dict]:
+def get_all_hosts_from_lab(lab: str) -> list[dict]:
     """List hosts for a given lab.
 
     Args
@@ -95,7 +92,7 @@ def get_all_hosts_from_lab(lab: str) -> List[dict]:
 
 
 @mcp.resource("hosts://tag/{tag}")
-def get_all_hosts_for_tag(tag: str) -> List[dict]:
+def get_all_hosts_for_tag(tag: str) -> list[dict]:
     """List hosts that have a given tag.
 
     Args
