@@ -18,3 +18,4 @@ from tools import network_hardware
 from tools import operations
 from tools import dell_switch
 from tools import junos
+from tools import hpe_hardware_export

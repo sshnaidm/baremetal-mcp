@@ -15,6 +15,18 @@ Collection is read-only on the host. Do not request DHCP, bring links up, restar
 
 When neither serial nor a visually confirmed VNC shell is available, use `get_network_hardware` for read-only Redfish adapter, port, function, and firmware-visible address evidence. Keep that evidence separate from Linux interface names and carrier state; do not save it as an OS-observed snapshot.
 
+If a serial collection is retry-safe, use configured VNC as its fallback. For an obscured or scrolling console, follow the `bmc-console` recovery flow immediately: send only the shell no-op `:` plus Enter, close its pager, capture again, then run the normal collection command without waiting for logs to stop or a prompt to remain visible. Do not infer structured observations from the screen or treat firmware-visible link state as an OS observation.
+
+## HPE iLO physical NIC slots
+
+For HPE hosts, use the HPE OEM Redfish collection `GET /redfish/v1/Systems/1/BaseNetworkAdapters` after the normal hardware query when a physical NIC slot is needed. Read every member returned by the collection (typically `/redfish/v1/Systems/1/BaseNetworkAdapters/1`, `/2`, and so on). Each member provides:
+
+- `Location`, such as `PCI-E Slot 7` or `OCP 3.0 Slot 10`;
+- `StructuredName`, such as `NIC.Slot.7.1` or `OCP.Slot.10.1`;
+- `PhysicalPorts[*].MacAddress` and `PhysicalPorts[*].Oem.Hpe.PortNumber`.
+
+Join an OS-observed interface to this evidence only by normalized MAC address. Record `Location` as the NIC slot, `StructuredName` as the firmware slot identifier, and the OEM port number as the physical port. Do not infer a slot from Linux PCI address or adapter ordering when no MAC match is available. `LinkStatus` in this OEM resource is firmware-visible evidence; retain Linux carrier state as the authoritative OS link observation.
+
 For every host, preserve and report:
 
 - collection transport and evidence sources;

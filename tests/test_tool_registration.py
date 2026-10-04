@@ -19,6 +19,7 @@ EXPECTED_TOOLS = {
     "eject_media",
     "ensure_boot_once",
     "export_hardware_inventory_xml",
+    "export_hpe_hardware_inventory",
     "export_network_inventory",
     "get_console_session_status",
     "get_firmware_inventory",

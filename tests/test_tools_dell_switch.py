@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, call
 
 import paramiko
+import pytest
 
 
 class TestDellSwitchSshCommandsSync:
@@ -182,13 +183,27 @@ class TestDellSwitchApplyCommandsSync:
             "end",
             "copy running-configuration startup-configuration",
         ]
-        result = _dell_switch_apply_commands_sync("test-switch", commands, True)
+        result = _dell_switch_apply_commands_sync("test-switch", commands, True, startup_save_authorized=True)
 
         assert result["status"] == "success"
         assert result["commands_executed"] == commands
         assert [item["command"] for item in result["command_results"]] == commands
         for command in commands:
             mock_channel.send.assert_any_call(f"{command}\n")
+
+    def test_rejects_startup_save_before_connecting(self, monkeypatch):
+        mock_client = MagicMock(spec=paramiko.SSHClient)
+        monkeypatch.setattr("tools.dell_switch.paramiko.SSHClient", lambda: mock_client)
+
+        from tools.dell_switch import _dell_switch_apply_commands_sync
+
+        result = _dell_switch_apply_commands_sync(
+            "test-switch", ["copy running-configuration startup-configuration"], True
+        )
+
+        assert result["status"] == "error"
+        assert result["phase"] == "startup-save-confirmation"
+        mock_client.connect.assert_not_called()
 
     def test_stops_after_cli_error(self, monkeypatch):
         import config
@@ -235,7 +250,10 @@ class TestDellSwitchApplyCommands:
         assert result["plan"]["commands"] == commands
         assert result["plan"]["session_setup"] == ["terminal length 0"]
         assert result["plan"]["commands_are_unrestricted"] is True
+        assert result["plan"]["writes_startup_configuration"] is True
         assert result["confirmation_required"].startswith("APPLY DELL SWITCH COMMANDS ")
+        assert result["startup_save_requires_explicit_user_confirmation"] is True
+        assert result["startup_save_confirmation_required"].startswith("SAVE SWITCH STARTUP CONFIGURATION ")
 
     async def test_requires_exact_confirmation_before_connecting(self, monkeypatch):
         from tools.dell_switch import dell_switch_apply_commands
@@ -260,9 +278,10 @@ class TestDellSwitchApplyCommands:
         commands = ["configure terminal", "vlan 307", "end", "write memory"]
         dry_run = await dell_switch_apply_commands(["switch-1", "switch-2"], commands)
 
-        async def mock_apply(switch_id, supplied_commands, stop_on_error):
+        async def mock_apply(switch_id, supplied_commands, stop_on_error, startup_save_authorized):
             assert supplied_commands == commands
             assert stop_on_error is True
+            assert startup_save_authorized is True
             return {"switch_id": switch_id, "status": "success"}
 
         monkeypatch.setattr("tools.dell_switch._dell_switch_apply_commands", mock_apply)
@@ -271,10 +290,79 @@ class TestDellSwitchApplyCommands:
             commands,
             dry_run=False,
             confirmation=dry_run["confirmation_required"],
+            startup_save_user_confirmed=True,
+            startup_save_confirmation=dry_run["startup_save_confirmation_required"],
         )
 
         assert result["status"] == "success"
         assert [item["switch_id"] for item in result["results"]] == ["switch-1", "switch-2"]
+
+    async def test_startup_save_requires_separate_user_confirmation(self, monkeypatch):
+        from tools.dell_switch import dell_switch_apply_commands
+
+        commands = ["copy running-configuration startup-configuration"]
+        dry_run = await dell_switch_apply_commands(["test-switch"], commands)
+        mock_apply = MagicMock()
+        monkeypatch.setattr("tools.dell_switch._dell_switch_apply_commands", mock_apply)
+
+        for user_confirmed, save_confirmation in [
+            (False, dry_run["startup_save_confirmation_required"]),
+            (True, None),
+            (True, "wrong"),
+        ]:
+            result = await dell_switch_apply_commands(
+                ["test-switch"],
+                commands,
+                dry_run=False,
+                confirmation=dry_run["confirmation_required"],
+                startup_save_user_confirmed=user_confirmed,
+                startup_save_confirmation=save_confirmation,
+            )
+            assert result["status"] == "error"
+            assert result["phase"] == "startup-save-confirmation"
+        mock_apply.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "copy running-configuration startup-configuration",
+            "COPY run start",
+            "do copy running-config startup-config",
+            "write memory",
+            "wr mem",
+            "save",
+            "delete startup-configuration",
+            "show version; write memory",
+        ],
+    )
+    async def test_startup_write_aliases_are_guarded(self, command):
+        from tools.dell_switch import dell_switch_apply_commands
+
+        preview = await dell_switch_apply_commands(["test-switch"], [command])
+
+        assert preview["plan"]["writes_startup_configuration"] is True
+        assert preview["startup_save_requires_explicit_user_confirmation"] is True
+
+    async def test_running_config_only_does_not_require_startup_gate(self, monkeypatch):
+        from tools.dell_switch import dell_switch_apply_commands
+
+        commands = ["configure terminal", "interface ethernet1/1/6:2", "end"]
+        preview = await dell_switch_apply_commands(["test-switch"], commands)
+        assert preview["plan"]["writes_startup_configuration"] is False
+        assert "startup_save_confirmation_required" not in preview
+
+        async def mock_apply(switch_id, supplied_commands, stop_on_error, startup_save_authorized):
+            assert startup_save_authorized is False
+            return {"switch_id": switch_id, "status": "success"}
+
+        monkeypatch.setattr("tools.dell_switch._dell_switch_apply_commands", mock_apply)
+        result = await dell_switch_apply_commands(
+            ["test-switch"],
+            commands,
+            dry_run=False,
+            confirmation=preview["confirmation_required"],
+        )
+        assert result["status"] == "success"
 
     async def test_rejects_multiline_command(self):
         from tools.dell_switch import dell_switch_apply_commands
