@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 MCP Redfish Server - Entry point.
 
@@ -7,7 +6,7 @@ Run with:
     fastmcp run --port 5004 --host 127.0.0.1 -t streamable-http ./main.py
 """
 
-from config import mcp, _load_config, logger
+from config import _load_config, logger, mcp
 
 # ``fastmcp run main.py`` imports this module and extracts ``mcp`` without
 # calling ``main()``.  Load configuration before registering resources so the
@@ -21,7 +20,7 @@ import resources  # noqa: E402,F401
 import tools  # noqa: E402,F401
 
 
-def main():
+def main() -> None:
     """Start the MCP Redfish server."""
     logger.info("Starting Simplified Redfish MCP Server")
     logger.info("MCP tools are registered dynamically from the tools package")

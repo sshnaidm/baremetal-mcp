@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
 """
 Vendor-specific Redfish handlers for Dell, HPE, and Supermicro.
 """
 
 import base64
-from typing import Any, Dict, Optional, Type
+from typing import Any
 
 
 class BaseVendorHandler:
@@ -15,18 +14,18 @@ class BaseVendorHandler:
     UPDATE_SERVICE_PATH: str
     HW_INVENTORY_PATH: str
 
-    def __init__(self, user: Optional[str], password: Optional[str]):
+    def __init__(self, user: str | None, password: str | None) -> None:
         if not isinstance(user, str) or not user.strip() or not isinstance(password, str) or not password.strip():
             raise ValueError("BMC username and password are required")
-        self.auth: Optional[tuple] = None
-        self.headers: Dict[str, str] = {"Content-Type": "application/json", "Accept": "application/json"}
+        self.auth: tuple | None = None
+        self.headers: dict[str, str] = {"Content-Type": "application/json", "Accept": "application/json"}
         self._configure_auth(user, password)
 
-    def _configure_auth(self, user: Optional[str], password: Optional[str]):
+    def _configure_auth(self, user: str | None, password: str | None) -> None:
         """Set up authentication, override in subclasses if needed."""
         self.auth = (user, password)
 
-    def get_request_args(self) -> Dict[str, Any]:
+    def get_request_args(self) -> dict[str, Any]:
         """Return common request arguments."""
         args = {"headers": self.headers}
         if self.auth:
@@ -44,7 +43,7 @@ class Dell(BaseVendorHandler):
         "redfish/v1/Dell/Managers/iDRAC.Embedded.1/DellLCService/Actions/DellLCService.ExportHWInventory"
     )
 
-    def _configure_auth(self, user: Optional[str], password: Optional[str]):
+    def _configure_auth(self, user: str | None, password: str | None) -> None:
         self.auth = (user, password)
 
 
@@ -56,8 +55,8 @@ class HPE(BaseVendorHandler):
     UPDATE_SERVICE_PATH = "/redfish/v1/UpdateService"
     HW_INVENTORY_PATH = ""
 
-    def _configure_auth(self, user: Optional[str], password: Optional[str]):
-        auth_string = base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("utf-8")
+    def _configure_auth(self, user: str | None, password: str | None) -> None:
+        auth_string = base64.b64encode(f"{user}:{password}".encode()).decode("utf-8")
         self.headers["Authorization"] = f"Basic {auth_string}"
 
 
@@ -69,11 +68,11 @@ class Supermicro(BaseVendorHandler):
     UPDATE_SERVICE_PATH = "/redfish/v1/UpdateService"
     HW_INVENTORY_PATH = ""
 
-    def _configure_auth(self, user: Optional[str], password: Optional[str]):
+    def _configure_auth(self, user: str | None, password: str | None) -> None:
         self.auth = (user, password)
 
 
-VENDOR_MAP: Dict[str, Type[BaseVendorHandler]] = {
+VENDOR_MAP: dict[str, type[BaseVendorHandler]] = {
     "dell": Dell,
     "hpe": HPE,
     "supermicro": Supermicro,

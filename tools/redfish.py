@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Low-level Redfish API tools - direct API access.
 """
@@ -6,7 +5,7 @@ Low-level Redfish API tools - direct API access.
 import asyncio
 import secrets
 from collections.abc import Mapping
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import config as cfg
 from config import mcp
@@ -19,11 +18,11 @@ _MAX_BATCH_SIZE = 64
 _MAX_CONCURRENCY = 12
 
 
-def _is_mutating_method(method: Any) -> bool:
+def _is_mutating_method(method: object) -> bool:
     return isinstance(method, str) and method.upper() in _MUTATING_METHODS
 
 
-def _not_sent_result(result: Dict[str, Any], method: Any) -> Dict[str, Any]:
+def _not_sent_result(result: dict[str, Any], method: object) -> dict[str, Any]:
     """Annotate a public mutation that validation/confirmation kept local."""
     value = dict(result)
     if _is_mutating_method(method):
@@ -33,7 +32,7 @@ def _not_sent_result(result: Dict[str, Any], method: Any) -> Dict[str, Any]:
     return value
 
 
-def _conservative_result(result: Dict[str, Any], method: Any) -> Dict[str, Any]:
+def _conservative_result(result: dict[str, Any], method: object) -> dict[str, Any]:
     """Never imply a failed public mutation is safe to repeat without evidence."""
     value = dict(result)
     if _is_mutating_method(method) and value.get("status") != "success":
@@ -43,7 +42,7 @@ def _conservative_result(result: Dict[str, Any], method: Any) -> Dict[str, Any]:
     return value
 
 
-def _payload_error(payload: Any) -> Optional[Dict[str, Any]]:
+def _payload_error(payload: object) -> dict[str, Any] | None:
     if payload is not None and not isinstance(payload, Mapping):
         return {
             "status": "error",
@@ -57,8 +56,8 @@ def _prepare_public_call(
     method: str,
     path: str,
     dry_run: bool,
-    confirm_method_path: Optional[str],
-) -> Tuple[Optional[str], Optional[str], Optional[Dict[str, Any]]]:
+    confirm_method_path: str | None,
+) -> tuple[str | None, str | None, dict[str, Any] | None]:
     """Validate a public passthrough call and guard every mutation."""
     if not isinstance(dry_run, bool):
         return (
@@ -136,8 +135,8 @@ def _prepare_public_call(
 
 
 def _normalize_server_ids(
-    server_ids: List[str],
-) -> Tuple[Optional[List[str]], Optional[Dict[str, Any]]]:
+    server_ids: list[str],
+) -> tuple[list[str] | None, dict[str, Any] | None]:
     if not isinstance(server_ids, list) or not server_ids:
         return None, {
             "status": "error",
@@ -151,7 +150,7 @@ def _normalize_server_ids(
             "message": f"At most {_MAX_BATCH_SIZE} server IDs may be requested at once",
         }
 
-    normalized: List[str] = []
+    normalized: list[str] = []
     seen = set()
     for value in server_ids:
         if not isinstance(value, str) or not value.strip():
@@ -173,7 +172,7 @@ def _normalize_server_ids(
     return normalized, None
 
 
-def _parallel_concurrency(value: Optional[int]) -> Tuple[Optional[int], Optional[Dict[str, Any]]]:
+def _parallel_concurrency(value: int | None) -> tuple[int | None, dict[str, Any] | None]:
     concurrency = getattr(cfg, "BATCH_CONCURRENCY", 6) if value is None else value
     if isinstance(concurrency, bool) or not isinstance(concurrency, int) or not 1 <= concurrency <= _MAX_CONCURRENCY:
         return None, {
@@ -196,10 +195,10 @@ async def redfish_call(
     server_id: str,
     method: str,
     path: str,
-    payload: Optional[Dict] = None,
+    payload: dict | None = None,
     dry_run: bool = True,
-    confirm_method_path: Optional[str] = None,
-) -> Dict:
+    confirm_method_path: str | None = None,
+) -> dict:
     """Make a low-level Redfish API call.
 
     Args
@@ -246,14 +245,14 @@ async def redfish_call(
     )
 )
 async def parallel_redfish_call(
-    server_ids: List[str],
+    server_ids: list[str],
     method: str,
     path: str,
-    payload: Optional[Dict] = None,
+    payload: dict | None = None,
     dry_run: bool = True,
-    confirm_method_path: Optional[str] = None,
-    concurrency: Optional[int] = None,
-) -> List[Dict]:
+    confirm_method_path: str | None = None,
+    concurrency: int | None = None,
+) -> list[dict]:
     """Make the same Redfish call across many servers in parallel.
 
     Args
@@ -288,7 +287,7 @@ async def parallel_redfish_call(
 
     semaphore = asyncio.Semaphore(limit)
 
-    async def run(server_id: str) -> Dict:
+    async def run(server_id: str) -> dict:
         async with semaphore:
             result = await _redfish_call(
                 server_id,

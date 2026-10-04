@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Collect normalized Linux network facts through guarded BMC serial consoles."""
 
 from __future__ import annotations
@@ -8,7 +7,7 @@ import ipaddress
 import re
 import shlex
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import config as cfg
 from config import mcp
@@ -23,11 +22,11 @@ _IFNAME_RE = re.compile(r"^[A-Za-z0-9_.:@-]{1,64}$")
 _MAC_RE = re.compile(r"\b[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}\b")
 _PCI_RE = re.compile(r"^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}\.[0-7]$")
 
-_BASE_PROBES: List[Tuple[str, str]] = [
+_BASE_PROBES: list[tuple[str, str]] = [
     ("link", "ip -o link show"),
     (
         "sysfs",
-        'for p in /sys/class/net/*; do n=${p##*/}; [ "$n" = lo ] && continue; '
+        'for p in /sys/class/net/*; do n=${p##*/}; [ "$n" = lo ] && continue; '  # noqa: ISC004
         '[ -e "$p/device" ] || continue; printf \'SYSFS\\t%s\\t\' "$n"; '
         "cat \"$p/carrier\" 2>/dev/null | tr -d '\\n'; printf '\\t'; "
         "cat \"$p/operstate\" 2>/dev/null | tr -d '\\n'; printf '\\t'; "
@@ -37,18 +36,18 @@ _BASE_PROBES: List[Tuple[str, str]] = [
     ),
     (
         "pci",
-        "if command -v lspci >/dev/null 2>&1; then "
+        "if command -v lspci >/dev/null 2>&1; then "  # noqa: ISC004
         "lspci -Dnn | grep -Ei 'Ethernet controller|Network controller' || true; "
         "else printf 'LSPCI_UNAVAILABLE\\n'; fi",
     ),
     (
         "system",
-        "printf 'HOSTNAME\\t'; hostname 2>/dev/null; printf 'SERIAL\\t'; "
+        "printf 'HOSTNAME\\t'; hostname 2>/dev/null; printf 'SERIAL\\t'; "  # noqa: ISC004
         "cat /sys/class/dmi/id/product_serial 2>/dev/null; printf 'KERNEL\\t'; uname -srm",
     ),
     (
         "lldp",
-        "if command -v lldpctl >/dev/null 2>&1; then lldpctl -f keyvalue 2>/dev/null; "
+        "if command -v lldpctl >/dev/null 2>&1; then lldpctl -f keyvalue 2>/dev/null; "  # noqa: ISC004
         "else printf 'LLDP_UNAVAILABLE\\n'; fi",
     ),
 ]
@@ -58,12 +57,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _normalize_ids(server_ids: List[str]) -> tuple[Optional[List[str]], Optional[str], int]:
+def _normalize_ids(server_ids: list[str]) -> tuple[list[str] | None, str | None, int]:
     if not isinstance(server_ids, list) or not server_ids:
         return None, "server_ids must be a non-empty list", 0
     if len(server_ids) > _MAX_BATCH_SIZE:
         return None, f"At most {_MAX_BATCH_SIZE} hosts may be collected at once", 0
-    ordered: List[str] = []
+    ordered: list[str] = []
     seen: set[str] = set()
     for value in server_ids:
         if not isinstance(value, str) or not value.strip():
@@ -77,8 +76,8 @@ def _normalize_ids(server_ids: List[str]) -> tuple[Optional[List[str]], Optional
     return ordered, None, len(server_ids) - len(ordered)
 
 
-def _parse_link(output: str) -> Dict[str, Dict[str, Any]]:
-    interfaces: Dict[str, Dict[str, Any]] = {}
+def _parse_link(output: str) -> dict[str, dict[str, Any]]:
+    interfaces: dict[str, dict[str, Any]] = {}
     pattern = re.compile(
         r"^\d+:\s+([^:@\s]+)(?:@[^:]+)?:\s+<([^>]*)>.*?\bstate\s+(\S+).*?" r"\blink/\S+\s+([0-9A-Fa-f:]{17})\b"
     )
@@ -113,8 +112,8 @@ def _parse_link(output: str) -> Dict[str, Dict[str, Any]]:
     return interfaces
 
 
-def _parse_sysfs(output: str) -> Dict[str, Dict[str, Optional[str]]]:
-    values: Dict[str, Dict[str, Optional[str]]] = {}
+def _parse_sysfs(output: str) -> dict[str, dict[str, str | None]]:
+    values: dict[str, dict[str, str | None]] = {}
     for line in output.splitlines():
         fields = line.strip().split("\t")
         if len(fields) < 7 or fields[0] != "SYSFS" or not _IFNAME_RE.fullmatch(fields[1]):
@@ -129,7 +128,7 @@ def _parse_sysfs(output: str) -> Dict[str, Dict[str, Optional[str]]]:
     return values
 
 
-def _split_vendor_model(description: str) -> tuple[Optional[str], Optional[str]]:
+def _split_vendor_model(description: str) -> tuple[str | None, str | None]:
     value = description.strip()
     value = re.sub(r"\s+\[[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}\](?:\s+\(rev [^)]+\))?$", "", value)
     vendors = (
@@ -148,8 +147,8 @@ def _split_vendor_model(description: str) -> tuple[Optional[str], Optional[str]]
     return (parts[0], parts[1] if len(parts) > 1 else None) if parts else (None, None)
 
 
-def _parse_pci(output: str) -> Dict[str, Dict[str, Optional[str]]]:
-    devices: Dict[str, Dict[str, Optional[str]]] = {}
+def _parse_pci(output: str) -> dict[str, dict[str, str | None]]:
+    devices: dict[str, dict[str, str | None]] = {}
     pattern = re.compile(
         r"^([0-9A-Fa-f:.]+)\s+(?:Ethernet|Network) controller(?:\s+\[[^]]+\])?:\s+(.+)$",
         re.IGNORECASE,
@@ -170,7 +169,7 @@ def _parse_pci(output: str) -> Dict[str, Dict[str, Optional[str]]]:
     return devices
 
 
-def _parse_addresses(output: str, interfaces: Dict[str, Dict[str, Any]]) -> None:
+def _parse_addresses(output: str, interfaces: dict[str, dict[str, Any]]) -> None:
     for line in output.splitlines():
         match = re.match(r"^\d+:\s+(\S+)\s+(inet6?)\s+(\S+).*?\bscope\s+(\S+)", line.strip())
         if not match:
@@ -192,7 +191,7 @@ def _parse_addresses(output: str, interfaces: Dict[str, Dict[str, Any]]) -> None
         )
 
 
-def _parse_speed(value: str) -> Optional[int]:
+def _parse_speed(value: str) -> int | None:
     match = re.search(r"(\d+)\s*([MGT])b/s", value, re.IGNORECASE)
     if not match:
         return None
@@ -200,8 +199,8 @@ def _parse_speed(value: str) -> Optional[int]:
     return int(match.group(1)) * multiplier
 
 
-def _apply_details(interface: Dict[str, Any], output: str) -> None:
-    fields: Dict[str, str] = {}
+def _apply_details(interface: dict[str, Any], output: str) -> None:
+    fields: dict[str, str] = {}
     for line in output.splitlines():
         match = re.match(
             r"\s*(driver|firmware-version|bus-info|Speed|Duplex|Port|Link detected|PHYS_PORT|DEV_PORT):\s*(.*)$",
@@ -226,8 +225,8 @@ def _apply_details(interface: Dict[str, Any], output: str) -> None:
         interface["link"]["detected_source"] = "ethtool"
 
 
-def _parse_system(output: str) -> Dict[str, Optional[str]]:
-    result: Dict[str, Optional[str]] = {"hostname": None, "serial_number": None, "kernel": None}
+def _parse_system(output: str) -> dict[str, str | None]:
+    result: dict[str, str | None] = {"hostname": None, "serial_number": None, "kernel": None}
     for line in output.splitlines():
         for prefix, key in (("HOSTNAME\t", "hostname"), ("SERIAL\t", "serial_number"), ("KERNEL\t", "kernel")):
             if line.startswith(prefix):
@@ -236,8 +235,8 @@ def _parse_system(output: str) -> Dict[str, Optional[str]]:
     return result
 
 
-def _parse_lldp(output: str) -> Dict[str, Dict[str, str]]:
-    neighbors: Dict[str, Dict[str, str]] = {}
+def _parse_lldp(output: str) -> dict[str, dict[str, str]]:
+    neighbors: dict[str, dict[str, str]] = {}
     for line in output.splitlines():
         match = re.match(
             r"lldp\.([^.]+)\.([^.]+)\.(chassis\.name|port\.id|port\.descr)=(.*)$",
@@ -251,7 +250,7 @@ def _parse_lldp(output: str) -> Dict[str, Dict[str, str]]:
     return neighbors
 
 
-def _command_map(result: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+def _command_map(result: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {
         str(command.get("label")): command
         for command in result.get("commands", [])
@@ -259,11 +258,11 @@ def _command_map(result: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     }
 
 
-def _required_success(commands: Dict[str, Dict[str, Any]], labels: List[str]) -> bool:
+def _required_success(commands: dict[str, dict[str, Any]], labels: list[str]) -> bool:
     return all(_probe_success(commands.get(label, {})) for label in labels)
 
 
-def _probe_success(probe: Dict[str, Any]) -> bool:
+def _probe_success(probe: dict[str, Any]) -> bool:
     """Require an unambiguous, complete zero-exit result before trusting output."""
     exit_code = probe.get("exit_code")
     return (
@@ -276,7 +275,7 @@ def _probe_success(probe: Dict[str, Any]) -> bool:
     )
 
 
-def _session_input_uncertain(result: Dict[str, Any]) -> bool:
+def _session_input_uncertain(result: dict[str, Any]) -> bool:
     """Return whether more console input would be unsafe after this session."""
     if result.get("sent_unconfirmed") is True or result.get("input_state") == "partial_text_possible":
         return True
@@ -301,7 +300,7 @@ def _detail_command(interface: str) -> str:
     )
 
 
-async def _redfish_system_identity(server_id: str) -> Dict[str, Any]:
+async def _redfish_system_identity(server_id: str) -> dict[str, Any]:
     try:
         handler = await _get_handler(server_id)
         response = await _redfish_call(server_id, "GET", handler.SYSTEM_PATH)
@@ -319,8 +318,8 @@ async def _redfish_system_identity(server_id: str) -> Dict[str, Any]:
         return {"status": "unavailable", "message": f"{type(exc).__name__}: {exc}"[-1000:]}
 
 
-def _configured_expected_macs(server: Dict[str, Any]) -> set[str]:
-    values: List[Any] = []
+def _configured_expected_macs(server: dict[str, Any]) -> set[str]:
+    values: list[Any] = []
     for key in ("expected_host_macs", "host_macs"):
         if isinstance(server.get(key), list):
             values.extend(server[key])
@@ -337,16 +336,16 @@ def _configured_expected_macs(server: Dict[str, Any]) -> set[str]:
 
 
 def _identity_result(
-    server: Dict[str, Any],
-    system: Dict[str, Optional[str]],
-    redfish: Dict[str, Any],
-    interfaces: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    server: dict[str, Any],
+    system: dict[str, str | None],
+    redfish: dict[str, Any],
+    interfaces: list[dict[str, Any]],
+) -> dict[str, Any]:
     observed_macs = {item["mac_address"] for item in interfaces if item.get("mac_address")}
     expected_macs = _configured_expected_macs(server)
     missing_macs = sorted(expected_macs - observed_macs)
 
-    def clean_serial(value: Any) -> str:
+    def clean_serial(value: object) -> str:
         serial = str(value or "").strip()
         if serial.casefold() in {"", "none", "not specified", "unknown", "to be filled by o.e.m."}:
             return ""
@@ -356,7 +355,7 @@ def _identity_result(
     redfish_serial = clean_serial(redfish.get("serial_number"))
     configured_serial = clean_serial(server.get("serial_number") or server.get("service_tag"))
 
-    def compare(left: str, right: str) -> Optional[bool]:
+    def compare(left: str, right: str) -> bool | None:
         return left.casefold() == right.casefold() if left and right else None
 
     serial_comparisons = {
@@ -365,7 +364,7 @@ def _identity_result(
         "os_to_redfish": compare(os_serial, redfish_serial),
     }
 
-    reasons: List[str] = []
+    reasons: list[str] = []
     if missing_macs:
         reasons.append("configured host MACs were not observed")
     comparison_messages = {
@@ -374,7 +373,7 @@ def _identity_result(
         "os_to_redfish": "OS DMI serial does not match the Redfish system serial",
     }
     reasons.extend(comparison_messages[name] for name, matches in serial_comparisons.items() if matches is False)
-    verification_evidence: List[str] = []
+    verification_evidence: list[str] = []
     if expected_macs and not missing_macs:
         verification_evidence.append("configured_host_macs")
     verification_evidence.extend(name for name, matches in serial_comparisons.items() if matches is True)
@@ -402,7 +401,7 @@ def _identity_result(
     }
 
 
-def _serial_failure(server_id: str, result: Dict[str, Any], vnc_available: bool) -> Dict[str, Any]:
+def _serial_failure(server_id: str, result: dict[str, Any], vnc_available: bool) -> dict[str, Any]:
     return {
         "server_id": server_id,
         "status": "error",
@@ -428,8 +427,8 @@ async def _collect_one(
     *,
     transport: str,
     save: bool,
-    timeout_seconds: Optional[float],
-) -> Dict[str, Any]:
+    timeout_seconds: float | None,
+) -> dict[str, Any]:
     server = cfg.CONFIG.get(server_id)
     if not isinstance(server, dict):
         return {
@@ -500,7 +499,7 @@ async def _collect_one(
         if description:
             interface.update(description)
 
-    details: List[Tuple[str, str]] = [
+    details: list[tuple[str, str]] = [
         (f"detail_{index}", _detail_command(name)) for index, name in enumerate(sorted(interfaces))
     ]
     details.extend(
@@ -573,7 +572,7 @@ async def _collect_one(
         "optional_probe_failures": optional_failures,
     }
 
-    save_result: Optional[Dict[str, Any]] = None
+    save_result: dict[str, Any] | None = None
     if save and identity["status"] == "verified":
         save_result = await save_network_inventory(
             server_id,
@@ -590,11 +589,13 @@ async def _collect_one(
             "message": f"identity {identity['status']}: collected data was not persisted",
         }
 
-    if identity["status"] == "mismatch":
-        status = "error"
-    elif save and identity["status"] != "verified":
-        status = "error"
-    elif save_result and save_result.get("status") != "success":
+    if (
+        identity["status"] == "mismatch"
+        or save
+        and identity["status"] != "verified"
+        or save_result
+        and save_result.get("status") != "success"
+    ):
         status = "error"
     elif identity["status"] != "verified":
         status = "partial"
@@ -630,12 +631,12 @@ async def _collect_one(
     )
 )
 async def collect_network_inventory(
-    server_ids: List[str],
+    server_ids: list[str],
     transport: str = "auto",
     save: bool = True,
-    concurrency: Optional[int] = None,
-    timeout_seconds: Optional[float] = None,
-) -> Dict[str, Any]:
+    concurrency: int | None = None,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
     cfg._load_config()
     normalized, error, duplicates_removed = _normalize_ids(server_ids)
     transport = str(transport).strip().lower()
@@ -673,7 +674,7 @@ async def collect_network_inventory(
 
     semaphore = asyncio.Semaphore(concurrency)
 
-    async def run(server_id: str) -> Dict[str, Any]:
+    async def run(server_id: str) -> dict[str, Any]:
         async with semaphore:
             return await _collect_one(
                 server_id,

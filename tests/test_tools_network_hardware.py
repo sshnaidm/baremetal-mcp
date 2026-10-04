@@ -1,13 +1,21 @@
 """Tests for normalized read-only Redfish network hardware inventory."""
 
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any
+from unittest.mock import MagicMock
+
+from conftest import DELL_R750_SYSTEM, make_mock_response
 from fastmcp import Client
 
 import config
-from conftest import DELL_R750_SYSTEM, make_mock_response
 from tools.network_hardware import get_network_hardware
 
 
-async def test_collects_interfaces_adapters_ports_and_functions(setup_dell_config, mock_redfish_client):
+async def test_collects_interfaces_adapters_ports_and_functions(
+    setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+) -> None:
     system = dict(DELL_R750_SYSTEM)
     routes = {
         "/Systems/System.Embedded.1/EthernetInterfaces/NIC1": make_mock_response(
@@ -99,7 +107,9 @@ async def test_collects_interfaces_adapters_ports_and_functions(setup_dell_confi
     assert host["network_device_functions"][0]["physical_port_path"].endswith("/P1")
 
 
-async def test_identity_mismatch_stops_hardware_walk(setup_dell_config, mock_redfish_client):
+async def test_identity_mismatch_stops_hardware_walk(
+    setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+) -> None:
     config.CONFIG["host1"]["serial_number"] = "EXPECTED"
     observed = dict(DELL_R750_SYSTEM, SerialNumber="OTHER")
     mock_redfish_client({"/Systems/System.Embedded.1": make_mock_response(200, observed)})
@@ -110,7 +120,7 @@ async def test_identity_mismatch_stops_hardware_walk(setup_dell_config, mock_red
     assert result["results"][0]["identity"]["status"] == "mismatch"
 
 
-async def test_network_hardware_tool_is_registered():
+async def test_network_hardware_tool_is_registered() -> None:
     async with Client(config.mcp) as client:
         names = {tool.name for tool in await client.list_tools()}
     assert "get_network_hardware" in names

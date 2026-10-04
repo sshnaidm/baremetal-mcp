@@ -1,19 +1,23 @@
 """Tests for tools/junos.py - Junos switch SSH operations."""
 
+from __future__ import annotations
+
+from typing import Any
 from unittest.mock import MagicMock
 
 import paramiko
+import pytest
 
 
 class TestJunosSshCommandsSync:
-    def test_unknown_switch(self):
+    def test_unknown_switch(self) -> None:
         from tools.junos import _junos_ssh_commands_sync
 
         result = _junos_ssh_commands_sync("nonexistent", ["show version"])
         assert result["status"] == "error"
         assert "Unknown switch" in result["message"]
 
-    def test_no_address(self, monkeypatch):
+    def test_no_address(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         config.CONFIG["dummy"] = {"bmc_ip": "1.2.3.4"}
@@ -26,7 +30,7 @@ class TestJunosSshCommandsSync:
         assert result["status"] == "error"
         assert "No address" in result["message"]
 
-    def test_missing_credentials(self):
+    def test_missing_credentials(self) -> None:
         import config
 
         config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
@@ -38,7 +42,7 @@ class TestJunosSshCommandsSync:
         assert result["status"] == "error"
         assert "Missing credentials" in result["message"]
 
-    def test_requires_explicit_port(self):
+    def test_requires_explicit_port(self) -> None:
         import config
 
         config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1"}
@@ -51,7 +55,7 @@ class TestJunosSshCommandsSync:
         assert result["status"] == "error"
         assert "switch.port" in result["message"]
 
-    def test_auth_failure(self, monkeypatch):
+    def test_auth_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
@@ -71,7 +75,7 @@ class TestJunosSshCommandsSync:
         assert result["status"] == "error"
         assert "Authentication failed" in result["message"]
 
-    def test_generic_exception(self, monkeypatch):
+    def test_generic_exception(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
@@ -91,7 +95,7 @@ class TestJunosSshCommandsSync:
         assert result["status"] == "error"
         assert "Connection timeout" in result["message"]
 
-    def test_successful_command(self, monkeypatch):
+    def test_successful_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
@@ -123,7 +127,7 @@ class TestJunosSshCommandsSync:
         assert result["status"] == "success"
         assert "show version" in result["data"]
 
-    def test_prompt_timeout(self, monkeypatch):
+    def test_prompt_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
@@ -152,7 +156,7 @@ class TestJunosSshCommandsSync:
 
 
 class TestJunosRunCommand:
-    async def test_success(self, monkeypatch):
+    async def test_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import config
 
         config.SWITCHES["test-switch"] = {"hostname": "10.0.0.1", "port": 22}
@@ -164,7 +168,7 @@ class TestJunosRunCommand:
             "data": {"show interfaces": "ge-0/0/0  up"},
         }
 
-        async def mock_ssh(sid, cmds):
+        async def mock_ssh(sid: object, cmds: list[str]) -> object:
             return mock_result
 
         monkeypatch.setattr("tools.junos._junos_ssh_commands", mock_ssh)
@@ -175,8 +179,8 @@ class TestJunosRunCommand:
         assert result["status"] == "success"
         assert result["data"] == "ge-0/0/0  up"
 
-    async def test_error_passthrough(self, monkeypatch):
-        async def mock_ssh(sid, cmds):
+    async def test_error_passthrough(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        async def mock_ssh(sid: object, cmds: list[str]) -> dict[str, Any]:
             return {"switch_id": sid, "status": "error", "message": "Connection refused"}
 
         monkeypatch.setattr("tools.junos._junos_ssh_commands", mock_ssh)

@@ -1,26 +1,24 @@
-#!/usr/bin/env python3
 """
 High-level server management tools - power, firmware, system info, hardware inventory.
 """
 
 import asyncio
-from typing import Dict, List, Optional
 
 import config as cfg
-from config import mcp, CONFIG, _normalize_boot_target
-from helpers import _redfish_call, _get_handler, _ensure_boot_once_single
 from cache import RESPONSE_CACHE
+from config import CONFIG, _normalize_boot_target, mcp
+from helpers import _ensure_boot_once_single, _get_handler, _redfish_call
 
 
 @mcp.tool(description="Read current power state (On/Off) for servers, in parallel.")
-async def get_power_state(server_ids: List[str]) -> List[Dict]:
+async def get_power_state(server_ids: list[str]) -> list[dict]:
     """Get current power state per server in parallel.
 
     Returns per-server
     {"server_id": "...", "status": "success", "power_state": "On|Off|Unknown"}
     """
 
-    async def _get_single(server_id: str) -> Dict:
+    async def _get_single(server_id: str) -> dict:
         try:
             handler = await _get_handler(server_id)
             result = await _redfish_call(server_id, "GET", handler.SYSTEM_PATH)
@@ -36,14 +34,14 @@ async def get_power_state(server_ids: List[str]) -> List[Dict]:
 
 
 @mcp.tool(description="Set power state via Redfish Reset action (Graceful/Force), in parallel.")
-async def set_power_state(server_ids: List[str], state: str) -> List[Dict]:
+async def set_power_state(server_ids: list[str], state: str) -> list[dict]:
     """Set server power state using Redfish ComputerSystem.Reset.
 
     Args
     - state: ResetType (e.g., On, ForceOff, GracefulShutdown, ForceRestart).
     """
 
-    async def _set_single(server_id: str, power_state: str) -> Dict:
+    async def _set_single(server_id: str, power_state: str) -> dict:
         try:
             handler = await _get_handler(server_id)
             path = f"{handler.SYSTEM_PATH}/Actions/ComputerSystem.Reset"
@@ -67,7 +65,7 @@ async def set_power_state(server_ids: List[str], state: str) -> List[Dict]:
         "Always use `name_filter` (e.g., ['NIC', 'RAID', 'SSD']) to limit the results."
     )
 )
-async def get_firmware_inventory(server_ids: List[str], name_filter: Optional[List[str]] = None) -> List[Dict]:
+async def get_firmware_inventory(server_ids: list[str], name_filter: list[str] | None = None) -> list[dict]:
     """Get firmware inventory per server in parallel.
 
     Args
@@ -81,7 +79,7 @@ async def get_firmware_inventory(server_ids: List[str], name_filter: Optional[Li
     {"server_id": "...", "status": "success", "inventory": [{"name": "...", "version": "..."}]}
     """
 
-    async def _get_single(server_id: str) -> Dict:
+    async def _get_single(server_id: str) -> dict:
         try:
             cache_key = f"{server_id}:firmware_inventory"
             cached = RESPONSE_CACHE.get(cache_key)
@@ -122,7 +120,7 @@ async def get_firmware_inventory(server_ids: List[str], name_filter: Optional[Li
                     m.get("@odata.id") for m in result.get("data", {}).get("Members", []) if m.get("@odata.id")
                 ]
 
-                async def _fetch_member(link: str) -> Optional[Dict]:
+                async def _fetch_member(link: str) -> dict | None:
                     resp = await _redfish_call(server_id, "GET", link)
                     if resp.get("status") == "success":
                         data = resp.get("data", {})
@@ -155,7 +153,7 @@ async def get_firmware_inventory(server_ids: List[str], name_filter: Optional[Li
         " (Dell, HPE, Supermicro) and all generations."
     )
 )
-async def get_system_info(server_ids: List[str]) -> List[Dict]:
+async def get_system_info(server_ids: list[str]) -> list[dict]:
     """Get high-level system info per server in parallel.
     Includes manufacturer, model, serial number, power state, health, BIOS version, firmware (iDRAC) version.
 
@@ -163,7 +161,7 @@ async def get_system_info(server_ids: List[str]) -> List[Dict]:
     {"server_id": "...", "status": "success", "info": {"manufacturer": "...", ...}}
     """
 
-    async def _get_single(server_id: str) -> Dict:
+    async def _get_single(server_id: str) -> dict:
         try:
             cache_key = f"{server_id}:system_info"
             cached = RESPONSE_CACHE.get(cache_key)
@@ -203,7 +201,7 @@ async def get_system_info(server_ids: List[str]) -> List[Dict]:
 @mcp.tool(
     description="Unified hardware inventory: CPUs, memory, NICs, drives, volumes (Dell/HPE/Supermicro compatible)."
 )
-async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
+async def get_hardware_overview(server_ids: list[str]) -> list[dict]:
     """Aggregates CPU, memory, NIC, and storage (drives/volumes) info using standard Redfish paths.
 
     Targets broad compatibility with Dell, HPE, and Supermicro by using:
@@ -217,7 +215,7 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
     - Chassis/*/NetworkAdapters (Supermicro physical adapter details)
     """
 
-    async def _collect_single(server_id: str) -> Dict:
+    async def _collect_single(server_id: str) -> dict:
         try:
             cache_key = f"{server_id}:hardware_overview"
             cached = RESPONSE_CACHE.get(cache_key)
@@ -243,7 +241,7 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
             }
 
             # Helper to fetch collection members' details in parallel
-            async def _fetch_members(collection_path: str) -> List[Dict]:
+            async def _fetch_members(collection_path: str) -> list[dict]:
                 coll = await _redfish_call(server_id, "GET", collection_path)
                 if coll.get("status") != "success":
                     return []
@@ -268,7 +266,7 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
             )
 
             # Fetch Chassis collection once for Supermicro (used by drive discovery + NetworkAdapters)
-            chassis_list: List[Dict] = []
+            chassis_list: list[dict] = []
             is_supermicro = handler.__class__.__name__ == "Supermicro"
             if is_supermicro:
                 chassis_resp = await _redfish_call(server_id, "GET", "/redfish/v1/Chassis")
@@ -276,7 +274,7 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
                     chassis_list = (chassis_resp.get("data", {}) or {}).get("Members", [])
 
             # SimpleStorage fallback when /Storage returns no controllers
-            simple_storage_drives: List[Dict] = []
+            simple_storage_drives: list[dict] = []
             if not storage_members:
                 simple_storage_path = f"{handler.SYSTEM_PATH}/SimpleStorage"
                 simple_members = await _fetch_members(simple_storage_path)
@@ -301,42 +299,38 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
             # Known limitation: on X11 with both a RAID controller AND NVMe,
             # RAID drives appear in /Storage while NVMe only in /Chassis —
             # this fallback won't fire because /Storage is non-empty.
-            chassis_drives: List[Dict] = []
-            if not storage_members and not simple_storage_drives:
-                if is_supermicro:
-                    storage_chassis_paths = [
-                        cm.get("@odata.id")
-                        for cm in chassis_list
-                        if cm.get("@odata.id")
-                        and any(
-                            kw in cm["@odata.id"]
-                            for kw in ("NVMeSSD", "HA-RAID", "StorageBackplane", "StorageEnclosure")
-                        )
+            chassis_drives: list[dict] = []
+            if not storage_members and not simple_storage_drives and is_supermicro:
+                storage_chassis_paths = [
+                    cm.get("@odata.id")
+                    for cm in chassis_list
+                    if cm.get("@odata.id")
+                    and any(
+                        kw in cm["@odata.id"] for kw in ("NVMeSSD", "HA-RAID", "StorageBackplane", "StorageEnclosure")
+                    )
+                ]
+
+                async def _fetch_chassis_drives(chassis_path: str) -> list[dict]:
+                    drive_members = await _fetch_members(f"{chassis_path}/Drives")
+                    return [
+                        {
+                            "id": d.get("Id"),
+                            "name": d.get("Name"),
+                            "model": d.get("Model"),
+                            "serial_number": d.get("SerialNumber"),
+                            "capacity_bytes": d.get("CapacityBytes"),
+                            "media_type": d.get("MediaType"),
+                            "protocol": d.get("Protocol"),
+                            "status": d.get("Status"),
+                            "source": f"Chassis:{chassis_path}",
+                        }
+                        for d in drive_members
                     ]
 
-                    async def _fetch_chassis_drives(chassis_path: str) -> List[Dict]:
-                        drive_members = await _fetch_members(f"{chassis_path}/Drives")
-                        return [
-                            {
-                                "id": d.get("Id"),
-                                "name": d.get("Name"),
-                                "model": d.get("Model"),
-                                "serial_number": d.get("SerialNumber"),
-                                "capacity_bytes": d.get("CapacityBytes"),
-                                "media_type": d.get("MediaType"),
-                                "protocol": d.get("Protocol"),
-                                "status": d.get("Status"),
-                                "source": f"Chassis:{chassis_path}",
-                            }
-                            for d in drive_members
-                        ]
-
-                    if storage_chassis_paths:
-                        chassis_results = await asyncio.gather(
-                            *[_fetch_chassis_drives(cp) for cp in storage_chassis_paths]
-                        )
-                        for cr in chassis_results:
-                            chassis_drives.extend(cr)
+                if storage_chassis_paths:
+                    chassis_results = await asyncio.gather(*[_fetch_chassis_drives(cp) for cp in storage_chassis_paths])
+                    for cr in chassis_results:
+                        chassis_drives.extend(cr)
 
             # Process processors
             processors = [
@@ -388,7 +382,7 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
             ]
 
             # Network adapters: physical adapter details from Chassis (Supermicro only)
-            network_adapters: List[Dict] = []
+            network_adapters: list[dict] = []
             adapter_chassis_paths = [
                 cr.get("@odata.id", "")
                 for cr in chassis_list
@@ -425,9 +419,9 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
                         )
 
             # Process storage controllers: fetch drives and volumes per controller in parallel
-            async def _process_storage_controller(storage_member: Dict) -> tuple:
-                ctrl_drives: List[Dict] = []
-                ctrl_volumes: List[Dict] = []
+            async def _process_storage_controller(storage_member: dict) -> tuple:
+                ctrl_drives: list[dict] = []
+                ctrl_volumes: list[dict] = []
                 storage_base = storage_member.get("@odata.id")
 
                 # Drives: some vendors expose a Drives list of links directly
@@ -482,8 +476,8 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
                 return ctrl_drives, ctrl_volumes
 
             # Process all storage controllers in parallel
-            drives: List[Dict] = []
-            volumes: List[Dict] = []
+            drives: list[dict] = []
+            volumes: list[dict] = []
             if storage_members:
                 controller_results = await asyncio.gather(*[_process_storage_controller(sm) for sm in storage_members])
                 for ctrl_drives, ctrl_volumes in controller_results:
@@ -514,10 +508,10 @@ async def get_hardware_overview(server_ids: List[str]) -> List[Dict]:
 
 
 @mcp.tool(description="Detect and return vendor (dell/hpe/supermicro) for servers, in parallel.")
-async def get_vendor(server_ids: List[str]) -> List[Dict]:
+async def get_vendor(server_ids: list[str]) -> list[dict]:
     """Gets the vendor for a list of servers in parallel."""
 
-    async def _get_single(server_id: str) -> Dict:
+    async def _get_single(server_id: str) -> dict:
         try:
             await _get_handler(server_id)
             vendor = CONFIG.get(server_id, {}).get("vendor", "Unknown")
@@ -531,12 +525,12 @@ async def get_vendor(server_ids: List[str]) -> List[Dict]:
 
 @mcp.tool(description="Declaratively set one-time boot target (pxe/cd/hdd/usb), optional reboot.")
 async def ensure_boot_once(
-    server_ids: List[str],
+    server_ids: list[str],
     target: str,
-    mode: Optional[str] = None,
+    mode: str | None = None,
     reboot: bool = False,
     reboot_type: str = "GracefulRestart",
-) -> List[Dict]:
+) -> list[dict]:
     """Ensure next boot uses the given target once.
 
     - target: common names accepted (pxe, cd/dvd, hdd/disk, usb) or exact Redfish enum.
@@ -563,7 +557,7 @@ async def ensure_boot_once(
 
 
 @mcp.tool(description="Manually clear the in-memory response cache for one or more servers.")
-async def clear_server_cache(server_ids: List[str]) -> List[Dict]:
+async def clear_server_cache(server_ids: list[str]) -> list[dict]:
     """Force cache invalidation for the given servers.
 
     Use after out-of-band hardware changes or when cached data seems stale.

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Baremetal MCP Server - bare-metal infrastructure management for AI assistants.
 
@@ -7,63 +6,61 @@ Supermicro) and Junos switches via SSH.
 """
 
 from config import (
-    mcp,
     CONFIG,
-    SWITCHES,
-    SECRETS,
     ISOS,
-    _load_config,
+    SECRETS,
+    SWITCHES,
     _flatten_dict,
+    _load_config,
     _normalize_boot_target,
     logger,
+    mcp,
     request_logger,
 )
-
 from handlers import (
+    HPE,
+    VENDOR_MAP,
     BaseVendorHandler,
     Dell,
-    HPE,
     Supermicro,
-    VENDOR_MAP,
 )
-
 from helpers import (
+    _eject_virtual_media,
+    _ensure_boot_once_single,
+    _find_virtual_cd_path,
     _get_handler,
     _get_vendor_from_api,
-    _redfish_call,
-    _find_virtual_cd_path,
     _get_vm_path_and_state,
-    _eject_virtual_media,
     _insert_virtual_media,
-    _ensure_boot_once_single,
+    _redfish_call,
 )
 
 __all__ = [
-    # MCP instance
-    "mcp",
     # Config
     "CONFIG",
-    "SWITCHES",
-    "SECRETS",
+    "HPE",
     "ISOS",
-    "_load_config",
-    "_flatten_dict",
-    "_normalize_boot_target",
-    "logger",
-    "request_logger",
+    "SECRETS",
+    "SWITCHES",
+    "VENDOR_MAP",
     # Handlers
     "BaseVendorHandler",
     "Dell",
-    "HPE",
     "Supermicro",
-    "VENDOR_MAP",
+    "_eject_virtual_media",
+    "_ensure_boot_once_single",
+    "_find_virtual_cd_path",
+    "_flatten_dict",
     # Helpers
     "_get_handler",
     "_get_vendor_from_api",
-    "_redfish_call",
-    "_find_virtual_cd_path",
     "_get_vm_path_and_state",
-    "_eject_virtual_media",
     "_insert_virtual_media",
-    "_ensure_boot_once_single",
+    "_load_config",
+    "_normalize_boot_target",
+    "_redfish_call",
+    "logger",
+    # MCP instance
+    "mcp",
+    "request_logger",
 ]

@@ -1,5 +1,7 @@
 """One authoritative contract for the tools exposed by the MCP server."""
 
+from __future__ import annotations
+
 from fastmcp import Client
 
 import config
@@ -57,7 +59,7 @@ EXPECTED_TOOLS = {
 }
 
 
-async def test_registered_tool_contract_is_complete_and_current():
+async def test_registered_tool_contract_is_complete_and_current() -> None:
     async with Client(config.mcp) as client:
         registered = {tool.name for tool in await client.list_tools()}
     assert registered == EXPECTED_TOOLS

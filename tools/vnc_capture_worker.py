@@ -1,9 +1,14 @@
-#!/usr/bin/env python3
 """One-shot vncdotool worker used by the BMC console tools."""
 
+from __future__ import annotations
+
 import sys
-from pathlib import Path
 import time
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from vncdotool.client import VNCDoToolClient
 
 _PAGER_KEYS = {
     "next_page": "space",
@@ -38,7 +43,7 @@ def _command_line(command: str) -> str:
     )
 
 
-def _type_text(client, value: str, delay: float) -> None:
+def _type_text(client: VNCDoToolClient, value: str, delay: float) -> None:
     """Type text through RFB without using the remote clipboard."""
     # iDRAC's virtual keyboard needs explicit Shift events for uppercase and
     # symbols such as >, &, $, braces, and pipe.
@@ -49,7 +54,7 @@ def _type_text(client, value: str, delay: float) -> None:
             client.pause(delay)
 
 
-def _capture(client, output: Path, wait: float) -> None:
+def _capture(client: VNCDoToolClient, output: Path, wait: float) -> None:
     if wait:
         client.pause(wait)
     client.captureScreen(output, format="PNG")

@@ -1,68 +1,102 @@
 """Tests for tools/server.py - power, firmware, system info, hardware, vendor, boot, cache."""
 
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any
+from unittest.mock import MagicMock
+
+import httpx
 from conftest import (
-    make_mock_response,
-    DELL_R750_SYSTEM,
     DELL_R750_MANAGER,
-    SUPERMICRO_SYSTEM,
+    DELL_R750_SYSTEM,
     SUPERMICRO_MANAGER,
-    SUPERMICRO_STORAGE_EMPTY,
     SUPERMICRO_SIMPLE_STORAGE,
     SUPERMICRO_SIMPLE_STORAGE_1,
+    SUPERMICRO_STORAGE_EMPTY,
+    SUPERMICRO_SYSTEM,
+    make_mock_response,
 )
+
 from tools.server import (
-    get_power_state,
-    set_power_state,
-    get_firmware_inventory,
-    get_system_info,
-    get_hardware_overview,
-    get_vendor,
-    ensure_boot_once,
     clear_server_cache,
+    ensure_boot_once,
+    get_firmware_inventory,
+    get_hardware_overview,
+    get_power_state,
+    get_system_info,
+    get_vendor,
+    set_power_state,
 )
 
 
 class TestGetPowerState:
-    async def test_dell_on(self, setup_dell_config, dell_routes, mock_redfish_client):
+    async def test_dell_on(
+        self,
+        setup_dell_config: None,
+        dell_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         mock_redfish_client(dell_routes)
         result = await get_power_state(["host1"])
         assert len(result) == 1
         assert result[0]["status"] == "success"
         assert result[0]["power_state"] == "On"
 
-    async def test_hpe_off(self, setup_hpe_config, hpe_routes, mock_redfish_client):
+    async def test_hpe_off(
+        self,
+        setup_hpe_config: None,
+        hpe_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         mock_redfish_client(hpe_routes)
         result = await get_power_state(["host100"])
         assert result[0]["power_state"] == "Off"
 
-    async def test_multiple_servers(self, setup_all_configs, dell_routes, hpe_routes, mock_redfish_client):
+    async def test_multiple_servers(
+        self,
+        setup_all_configs: None,
+        dell_routes: dict[str, httpx.Response],
+        hpe_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         routes = {**dell_routes, **hpe_routes}
         mock_redfish_client(routes)
         result = await get_power_state(["host1", "host100"])
         assert len(result) == 2
 
-    async def test_error_returns_error_dict(self, mock_redfish_client):
+    async def test_error_returns_error_dict(self, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]) -> None:
         mock_redfish_client({})
         result = await get_power_state(["nonexistent"])
         assert result[0]["status"] == "error"
 
 
 class TestSetPowerState:
-    async def test_success(self, setup_dell_config, dell_routes, mock_redfish_client):
+    async def test_success(
+        self,
+        setup_dell_config: None,
+        dell_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         routes = dict(dell_routes)
         routes["/Actions/ComputerSystem.Reset"] = make_mock_response(204, content=b"")
         mock_redfish_client(routes)
         result = await set_power_state(["host1"], "ForceRestart")
         assert result[0]["status"] == "success"
 
-    async def test_error(self, mock_redfish_client):
+    async def test_error(self, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]) -> None:
         mock_redfish_client({})
         result = await set_power_state(["nonexistent"], "On")
         assert result[0]["status"] == "error"
 
 
 class TestGetFirmwareInventory:
-    async def test_dell_expand_path(self, setup_dell_config, dell_routes, mock_redfish_client):
+    async def test_dell_expand_path(
+        self,
+        setup_dell_config: None,
+        dell_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         mock_redfish_client(dell_routes)
         result = await get_firmware_inventory(["host1"])
         assert result[0]["status"] == "success"
@@ -70,13 +104,23 @@ class TestGetFirmwareInventory:
         assert any(i["name"] == "BIOS" for i in inv)
         assert any(i["name"] == "iDRAC" for i in inv)
 
-    async def test_dell_with_name_filter(self, setup_dell_config, dell_routes, mock_redfish_client):
+    async def test_dell_with_name_filter(
+        self,
+        setup_dell_config: None,
+        dell_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         mock_redfish_client(dell_routes)
         result = await get_firmware_inventory(["host1"], name_filter=["NIC"])
         inv = result[0]["inventory"]
         assert all("NIC" in i["name"] or "nic" in i["name"].lower() for i in inv)
 
-    async def test_hpe_member_by_member(self, setup_hpe_config, hpe_routes, mock_redfish_client):
+    async def test_hpe_member_by_member(
+        self,
+        setup_hpe_config: None,
+        hpe_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         mock_redfish_client(hpe_routes)
         result = await get_firmware_inventory(["host100"])
         assert result[0]["status"] == "success"
@@ -84,14 +128,24 @@ class TestGetFirmwareInventory:
         assert len(inv) == 3
         assert any("iLO" in i["name"] for i in inv)
 
-    async def test_hpe_with_name_filter(self, setup_hpe_config, hpe_routes, mock_redfish_client):
+    async def test_hpe_with_name_filter(
+        self,
+        setup_hpe_config: None,
+        hpe_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         mock_redfish_client(hpe_routes)
         result = await get_firmware_inventory(["host100"], name_filter=["NIC"])
         inv = result[0]["inventory"]
         assert len(inv) == 1
         assert "NIC" in inv[0]["name"]
 
-    async def test_cached_inventory(self, setup_dell_config, dell_routes, mock_redfish_client):
+    async def test_cached_inventory(
+        self,
+        setup_dell_config: None,
+        dell_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         from cache import RESPONSE_CACHE
 
         cached_data = [{"name": "cached_fw", "version": "1.0"}]
@@ -100,7 +154,12 @@ class TestGetFirmwareInventory:
         result = await get_firmware_inventory(["host1"])
         assert result[0]["inventory"][0]["name"] == "cached_fw"
 
-    async def test_cached_with_filter(self, setup_dell_config, dell_routes, mock_redfish_client):
+    async def test_cached_with_filter(
+        self,
+        setup_dell_config: None,
+        dell_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         from cache import RESPONSE_CACHE
 
         cached_data = [
@@ -112,14 +171,19 @@ class TestGetFirmwareInventory:
         result = await get_firmware_inventory(["host1"], name_filter=["NIC"])
         assert len(result[0]["inventory"]) == 1
 
-    async def test_error_returns_error(self, mock_redfish_client):
+    async def test_error_returns_error(self, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]) -> None:
         mock_redfish_client({})
         result = await get_firmware_inventory(["nonexistent"])
         assert result[0]["status"] == "error"
 
 
 class TestGetSystemInfo:
-    async def test_dell(self, setup_dell_config, dell_routes, mock_redfish_client):
+    async def test_dell(
+        self,
+        setup_dell_config: None,
+        dell_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         mock_redfish_client(dell_routes)
         result = await get_system_info(["host1"])
         assert result[0]["status"] == "success"
@@ -129,14 +193,24 @@ class TestGetSystemInfo:
         assert info["bios_version"] == "1.8.2"
         assert info["firmware_version"] == "7.20.70.50"
 
-    async def test_hpe(self, setup_hpe_config, hpe_routes, mock_redfish_client):
+    async def test_hpe(
+        self,
+        setup_hpe_config: None,
+        hpe_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         mock_redfish_client(hpe_routes)
         result = await get_system_info(["host100"])
         info = result[0]["info"]
         assert info["manufacturer"] == "HPE"
         assert info["firmware_version"] == "iLO 5 v2.78"
 
-    async def test_cached(self, setup_dell_config, dell_routes, mock_redfish_client):
+    async def test_cached(
+        self,
+        setup_dell_config: None,
+        dell_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         from cache import RESPONSE_CACHE
 
         cached = {"server_id": "host1", "status": "success", "info": {"manufacturer": "Cached"}}
@@ -145,14 +219,16 @@ class TestGetSystemInfo:
         result = await get_system_info(["host1"])
         assert result[0]["info"]["manufacturer"] == "Cached"
 
-    async def test_error(self, mock_redfish_client):
+    async def test_error(self, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]) -> None:
         mock_redfish_client({})
         result = await get_system_info(["nonexistent"])
         assert result[0]["status"] == "error"
 
 
 class TestGetHardwareOverview:
-    async def test_dell_with_storage(self, setup_dell_config, mock_redfish_client):
+    async def test_dell_with_storage(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
         storage_collection = {
             "Members": [
                 {"@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/RAID.SL.7-1"},
@@ -189,7 +265,7 @@ class TestGetHardwareOverview:
         chassis_collection = {"Members": [{"@odata.id": "/redfish/v1/Chassis/System.Embedded.1"}]}
         network_adapters = {"Members": []}
 
-        def _route(method, url, **kwargs):
+        def _route(method: str, url: str | httpx.URL, **kwargs: object) -> httpx.Response:
             u = str(url)
             if "/Drives/Disk.Bay.4" in u:
                 return make_mock_response(200, drive_data)
@@ -227,7 +303,9 @@ class TestGetHardwareOverview:
         assert inv["processors"][0]["model"] == "Intel(R) Xeon(R) Gold 6330N"
         assert len(inv["storage"]["drives"]) >= 1
 
-    async def test_supermicro_simple_storage_fallback(self, setup_supermicro_config, mock_redfish_client):
+    async def test_supermicro_simple_storage_fallback(
+        self, setup_supermicro_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
         proc_collection = {"Members": []}
         mem_collection = {"Members": []}
         nic_collection = {"Members": []}
@@ -253,7 +331,9 @@ class TestGetHardwareOverview:
         assert len(drives) >= 1
         assert drives[0]["source"] == "SimpleStorage"
 
-    async def test_cached(self, setup_dell_config, mock_redfish_client):
+    async def test_cached(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
         from cache import RESPONSE_CACHE
 
         cached = {"server_id": "host1", "status": "success", "inventory": {"system": {"manufacturer": "Cached"}}}
@@ -262,49 +342,61 @@ class TestGetHardwareOverview:
         result = await get_hardware_overview(["host1"])
         assert result[0]["inventory"]["system"]["manufacturer"] == "Cached"
 
-    async def test_system_fetch_fails(self, setup_dell_config, mock_redfish_client):
+    async def test_system_fetch_fails(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
         mock_redfish_client({"/Systems/System.Embedded.1": make_mock_response(500, {"error": "fail"})})
         result = await get_hardware_overview(["host1"])
         assert result[0]["status"] == "error"
 
-    async def test_error(self, mock_redfish_client):
+    async def test_error(self, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]) -> None:
         mock_redfish_client({})
         result = await get_hardware_overview(["nonexistent"])
         assert result[0]["status"] == "error"
 
 
 class TestGetVendor:
-    async def test_known_vendor(self, setup_dell_config, dell_routes, mock_redfish_client):
+    async def test_known_vendor(
+        self,
+        setup_dell_config: None,
+        dell_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         mock_redfish_client(dell_routes)
         result = await get_vendor(["host1"])
         assert result[0]["status"] == "success"
         assert result[0]["vendor"] == "dell"
 
-    async def test_error(self, mock_redfish_client):
+    async def test_error(self, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]) -> None:
         mock_redfish_client({})
         result = await get_vendor(["nonexistent"])
         assert result[0]["status"] == "error"
 
 
 class TestEnsureBootOnce:
-    async def test_valid_alias(self, setup_dell_config, dell_routes, mock_redfish_client):
+    async def test_valid_alias(
+        self,
+        setup_dell_config: None,
+        dell_routes: dict[str, httpx.Response],
+        mock_redfish_client: Callable[[dict[str, Any]], MagicMock],
+    ) -> None:
         mock_redfish_client(dell_routes)
         result = await ensure_boot_once(["host1"], "pxe")
         assert result[0]["status"] == "success"
 
-    async def test_invalid_target(self, setup_dell_config):
+    async def test_invalid_target(self, setup_dell_config: None) -> None:
         result = await ensure_boot_once(["host1"], "badtarget")
         assert result[0]["status"] == "error"
         assert "Unsupported" in result[0]["message"]
 
-    async def test_multiple_servers_invalid(self, setup_all_configs):
+    async def test_multiple_servers_invalid(self, setup_all_configs: None) -> None:
         result = await ensure_boot_once(["host1", "host100"], "badtarget")
         assert len(result) == 2
         assert all(r["status"] == "error" for r in result)
 
 
 class TestClearServerCache:
-    async def test_entries_cleared(self):
+    async def test_entries_cleared(self) -> None:
         from cache import RESPONSE_CACHE
 
         RESPONSE_CACHE.set("host1:fw", "a", 300)
@@ -312,6 +404,6 @@ class TestClearServerCache:
         result = await clear_server_cache(["host1"])
         assert result[0]["cleared"] == 2
 
-    async def test_no_entries(self):
+    async def test_no_entries(self) -> None:
         result = await clear_server_cache(["host1"])
         assert result[0]["cleared"] == 0

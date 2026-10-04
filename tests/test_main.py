@@ -1,10 +1,14 @@
 """Tests for FastMCP module-import startup behavior."""
 
+from __future__ import annotations
+
 import importlib.util
 from pathlib import Path
 
+import pytest
 
-def test_fastmcp_module_import_loads_configuration(monkeypatch):
+
+def test_fastmcp_module_import_loads_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
     import config
 
     calls = []

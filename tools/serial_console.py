@@ -1,15 +1,15 @@
-#!/usr/bin/env python3
 """Guarded Linux command execution through Dell SOL and HPE iLO VSP."""
 
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 import re
 import secrets
 import socket
 import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import Any, TypeVar
 
 import paramiko
 
@@ -37,7 +37,7 @@ _LOGIN_PROMPT_RE = re.compile(r"(?:login|password):\s*\Z", re.IGNORECASE)
 _ANSI_CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _ANSI_OSC_RE = re.compile(r"\x1b\][^\x07]*(?:\x07|\x1b\\)")
 
-_SERIAL_LOCKS: Dict[str, asyncio.Lock] = {}
+_SERIAL_LOCKS: dict[str, asyncio.Lock] = {}
 
 
 @dataclass(frozen=True)
@@ -70,7 +70,7 @@ class _ReadResult:
 class _BoundedCapture:
     """Keep bounded head and tail text while counting the complete stream."""
 
-    def __init__(self, limit: int):
+    def __init__(self, limit: int) -> None:
         self.limit = max(1, int(limit))
         self.head_limit = (self.limit + 1) // 2
         self.tail_limit = self.limit - self.head_limit
@@ -101,7 +101,7 @@ class _BoundedCapture:
 class _ChannelReader:
     """Read token-delimited console output without losing post-token bytes."""
 
-    def __init__(self, channel: paramiko.Channel):
+    def __init__(self, channel: paramiko.Channel) -> None:
         self.channel = channel
         self.pending = ""
 
@@ -195,9 +195,9 @@ def _error_result(
     message: str,
     *,
     phase: str,
-    transport: Optional[str] = None,
+    transport: str | None = None,
     command_sent: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "server_id": server_id,
         "status": "error",
@@ -215,7 +215,7 @@ def _error_result(
     }
 
 
-def _validate_command(command: str) -> Optional[str]:
+def _validate_command(command: str) -> str | None:
     if not isinstance(command, str) or not command.strip():
         return "Console command must not be empty"
     if len(command) > _MAX_COMMAND_CHARS:
@@ -225,12 +225,12 @@ def _validate_command(command: str) -> Optional[str]:
     return None
 
 
-def _validate_commands(commands: Sequence[Tuple[str, str]]) -> Optional[str]:
+def _validate_commands(commands: Sequence[tuple[str, str]]) -> str | None:
     if not isinstance(commands, (list, tuple)) or not commands:
         return "At least one labeled command is required"
     if len(commands) > _MAX_COMMANDS_PER_SESSION:
         return f"At most {_MAX_COMMANDS_PER_SESSION} commands may share one console session"
-    labels: List[str] = []
+    labels: list[str] = []
     for item in commands:
         if not isinstance(item, (list, tuple)) or len(item) != 2:
             return "Each command must be a (label, command) pair"
@@ -246,7 +246,7 @@ def _validate_commands(commands: Sequence[Tuple[str, str]]) -> Optional[str]:
     return None
 
 
-def _normalize_transport(server: Dict[str, Any]) -> Tuple[Optional[_TransportProfile], Optional[str]]:
+def _normalize_transport(server: dict[str, Any]) -> tuple[_TransportProfile | None, str | None]:
     serial = server.get("serial_console")
     if not isinstance(serial, dict):
         return None, "serial_console configuration is required"
@@ -278,7 +278,7 @@ def _normalize_transport(server: Dict[str, Any]) -> Tuple[Optional[_TransportPro
     return profile, None
 
 
-def _serial_settings(server_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+def _serial_settings(server_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     cfg._load_config()
     server = cfg.CONFIG.get(server_id)
     if not isinstance(server, dict):
@@ -346,7 +346,7 @@ def _serial_settings(server_id: str) -> Tuple[Optional[Dict[str, Any]], Optional
     }, None
 
 
-def _connect_ssh(settings: Dict[str, Any]) -> paramiko.SSHClient:
+def _connect_ssh(settings: dict[str, Any]) -> paramiko.SSHClient:
     """Connect with password auth, falling back to keyboard-interactive auth."""
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -370,7 +370,7 @@ def _connect_ssh(settings: Dict[str, Any]) -> paramiko.SSHClient:
         # The failed password attempt may leave a transport/socket behind.
         client.close()
 
-    transport: Optional[paramiko.Transport] = None
+    transport: paramiko.Transport | None = None
     raw_socket = None
     try:
         raw_socket = socket.create_connection(
@@ -385,8 +385,8 @@ def _connect_ssh(settings: Dict[str, Any]) -> paramiko.SSHClient:
         def answer_prompts(
             _title: str,
             _instructions: str,
-            prompts: List[Tuple[str, bool]],
-        ) -> List[str]:
+            prompts: list[tuple[str, bool]],
+        ) -> list[str]:
             return [settings["username"] if echo else settings["password"] for _prompt, echo in prompts]
 
         transport.auth_interactive(settings["username"], answer_prompts)
@@ -409,7 +409,7 @@ def _prompt_probe(
     channel: paramiko.Channel,
     reader: _ChannelReader,
     timeout_seconds: float,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     nonce = secrets.token_hex(12)
     marker = f"__BM_PROBE_{nonce}__"
     command = f"printf '\\n__BM_PROBE_%s__\\n' '{nonce}'\r"
@@ -430,7 +430,7 @@ def _execute_command(
     label: str,
     command: str,
     timeout_seconds: float,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     nonce = secrets.token_hex(12)
     begin_marker = f"__BM_BEGIN_{nonce}__"
     end_marker = f"__BM_END_{nonce}__"
@@ -532,13 +532,13 @@ def _output_limit() -> int:
 
 def _not_sent_commands(
     server_id: str,
-    transport: Optional[str],
-    commands: Sequence[Tuple[str, str]],
+    transport: str | None,
+    commands: Sequence[tuple[str, str]],
     phase: str,
     message: str,
     *,
     retry_safe: bool,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     return [
         {
             **_error_result(
@@ -558,12 +558,12 @@ def _not_sent_commands(
 
 def _aggregate_session(
     server_id: str,
-    transport: Optional[str],
-    commands: List[Dict[str, Any]],
+    transport: str | None,
+    commands: list[dict[str, Any]],
     *,
     phase: str,
-    message: Optional[str] = None,
-) -> Dict[str, Any]:
+    message: str | None = None,
+) -> dict[str, Any]:
     successful = sum(item.get("status") == "success" for item in commands)
     sent = sum(item.get("command_sent") is True for item in commands)
     unconfirmed = any(
@@ -575,7 +575,7 @@ def _aggregate_session(
         status = "partial"
     else:
         status = "error"
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "server_id": server_id,
         "status": status,
         "transport": transport,
@@ -596,9 +596,9 @@ def _aggregate_session(
 
 def _run_serial_commands_sync(
     server_id: str,
-    commands: Sequence[Tuple[str, str]],
+    commands: Sequence[tuple[str, str]],
     timeout_seconds: float,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     settings, settings_error = _serial_settings(server_id)
     if settings_error:
         items = _not_sent_commands(
@@ -618,11 +618,11 @@ def _run_serial_commands_sync(
         )
 
     profile: _TransportProfile = settings["profile"]
-    client: Optional[paramiko.SSHClient] = None
-    channel: Optional[paramiko.Channel] = None
+    client: paramiko.SSHClient | None = None
+    channel: paramiko.Channel | None = None
     attached = False
     phase = "ssh-connect"
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     try:
         client = _connect_ssh(settings)
         phase = "shell-open"
@@ -758,7 +758,7 @@ def _run_serial_commands_sync(
                 pass
 
 
-def _timeout_value(timeout_seconds: Optional[float]) -> Tuple[Optional[float], Optional[str]]:
+def _timeout_value(timeout_seconds: float | None) -> tuple[float | None, str | None]:
     value = (
         _configured_number("CONSOLE_COMMAND_TIMEOUT", _DEFAULT_COMMAND_TIMEOUT)
         if timeout_seconds is None
@@ -779,16 +779,22 @@ def _serial_lock(server_id: str) -> asyncio.Lock:
     return _SERIAL_LOCKS.setdefault(server_id, asyncio.Lock())
 
 
-async def _run_in_thread(function, *args):
+_ThreadResult = TypeVar("_ThreadResult")
+
+
+async def _run_in_thread(
+    function: Callable[..., _ThreadResult],
+    *args: object,
+) -> _ThreadResult:
     """Small indirection that keeps the blocking transport easy to test/wrap."""
     return await asyncio.to_thread(function, *args)
 
 
 async def _run_serial_commands(
     server_id: str,
-    commands: List[Tuple[str, str]],
-    timeout_seconds: Optional[float] = None,
-) -> Dict[str, Any]:
+    commands: list[tuple[str, str]],
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
     """Attach once and execute ordered, labeled commands through SOL or VSP."""
     server_id = server_id.strip() if isinstance(server_id, str) else ""
     if not server_id:
@@ -839,8 +845,8 @@ async def _run_serial_commands(
 async def _run_serial_command(
     server_id: str,
     command: str,
-    timeout_seconds: Optional[float] = None,
-) -> Dict[str, Any]:
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
     """Execute one command and return a flattened per-host result."""
     result = await _run_serial_commands(
         server_id,
@@ -861,12 +867,12 @@ async def _run_serial_command(
     )
 
 
-def _normalize_server_ids(server_ids: List[str]) -> Tuple[Optional[List[str]], Optional[str], int]:
+def _normalize_server_ids(server_ids: list[str]) -> tuple[list[str] | None, str | None, int]:
     if not isinstance(server_ids, list) or not server_ids:
         return None, "server_ids must be a non-empty list", 0
     if len(server_ids) > _MAX_BATCH_SIZE:
         return None, f"At most {_MAX_BATCH_SIZE} server IDs may be requested at once", 0
-    ordered: List[str] = []
+    ordered: list[str] = []
     seen = set()
     for value in server_ids:
         if not isinstance(value, str) or not value.strip():
@@ -880,7 +886,7 @@ def _normalize_server_ids(server_ids: List[str]) -> Tuple[Optional[List[str]], O
     return ordered, None, len(server_ids) - len(ordered)
 
 
-def _concurrency_value(concurrency: Optional[int]) -> Tuple[Optional[int], Optional[str]]:
+def _concurrency_value(concurrency: int | None) -> tuple[int | None, str | None]:
     value = (
         _configured_int("CONSOLE_BATCH_CONCURRENCY", _DEFAULT_BATCH_CONCURRENCY) if concurrency is None else concurrency
     )
@@ -905,13 +911,13 @@ def _concurrency_value(concurrency: Optional[int]) -> Tuple[Optional[int], Optio
     )
 )
 async def run_console_command_batch(
-    server_ids: List[str],
+    server_ids: list[str],
     command: str,
-    timeout_seconds: Optional[float] = None,
-    concurrency: Optional[int] = None,
+    timeout_seconds: float | None = None,
+    concurrency: int | None = None,
     dry_run: bool = True,
-    confirm_command: Optional[str] = None,
-) -> Dict[str, Any]:
+    confirm_command: str | None = None,
+) -> dict[str, Any]:
     """Run one guarded console command across an explicitly selected host batch."""
     normalized, ids_error, duplicates_removed = _normalize_server_ids(server_ids)
     command_error = _validate_command(command)
@@ -920,9 +926,8 @@ async def run_console_command_batch(
     guard_error = None
     if not isinstance(dry_run, bool):
         guard_error = "dry_run must be true or false"
-    elif not dry_run:
-        if not isinstance(confirm_command, str) or not secrets.compare_digest(confirm_command, command):
-            guard_error = "Execution requires confirm_command to exactly match command"
+    elif not dry_run and (not isinstance(confirm_command, str) or not secrets.compare_digest(confirm_command, command)):
+        guard_error = "Execution requires confirm_command to exactly match command"
     validation_error = ids_error or command_error or timeout_error or concurrency_error or guard_error
     if validation_error:
         return {
@@ -987,7 +992,7 @@ async def run_console_command_batch(
 
     semaphore = asyncio.Semaphore(limit)
 
-    async def run(server_id: str) -> Dict[str, Any]:
+    async def run(server_id: str) -> dict[str, Any]:
         async with semaphore:
             return await _run_serial_command(server_id, command, timeout)
 

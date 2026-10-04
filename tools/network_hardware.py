@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
 """Vendor-neutral, read-only Redfish NIC, adapter, port, and function inventory."""
 
 from __future__ import annotations
 
 import asyncio
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import config as cfg
 from config import mcp
@@ -17,7 +16,7 @@ _MAX_MEMBERS = 256
 _MAC_RE = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
 
 
-def _odata_path(value: Any) -> Optional[str]:
+def _odata_path(value: object) -> str | None:
     if isinstance(value, str) and value.startswith("/"):
         return value
     if isinstance(value, dict):
@@ -27,23 +26,23 @@ def _odata_path(value: Any) -> Optional[str]:
     return None
 
 
-def _normalize_mac(value: Any) -> Optional[str]:
+def _normalize_mac(value: object) -> str | None:
     text = str(value or "").strip()
     return text.lower() if _MAC_RE.fullmatch(text) else None
 
 
-def _macs(value: Any) -> List[str]:
+def _macs(value: object) -> list[str]:
     values = value if isinstance(value, list) else [value]
     return sorted({mac for item in values if (mac := _normalize_mac(item))})
 
 
 class _RedfishReader:
-    def __init__(self, server_id: str, concurrency: int = 8):
+    def __init__(self, server_id: str, concurrency: int = 8) -> None:
         self.server_id = server_id
         self.semaphore = asyncio.Semaphore(concurrency)
-        self.errors: List[Dict[str, str]] = []
+        self.errors: list[dict[str, str]] = []
 
-    async def get(self, path: str, *, optional: bool = False) -> Optional[Dict[str, Any]]:
+    async def get(self, path: str, *, optional: bool = False) -> dict[str, Any] | None:
         async with self.semaphore:
             result = await _redfish_call(self.server_id, "GET", path)
         if result.get("status") == "success" and isinstance(result.get("data"), dict):
@@ -52,7 +51,7 @@ class _RedfishReader:
             self.errors.append({"path": path, "message": result.get("message", "Redfish GET failed")})
         return None
 
-    async def collection(self, path: str, *, optional: bool = True) -> List[Dict[str, Any]]:
+    async def collection(self, path: str, *, optional: bool = True) -> list[dict[str, Any]]:
         collection = await self.get(path, optional=optional)
         if not collection:
             return []
@@ -69,7 +68,7 @@ class _RedfishReader:
         return [value for value in values if value]
 
 
-def _ethernet_interface(data: Dict[str, Any]) -> Dict[str, Any]:
+def _ethernet_interface(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": data.get("Id"),
         "name": data.get("Name"),
@@ -88,7 +87,7 @@ def _ethernet_interface(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _adapter(data: Dict[str, Any]) -> Dict[str, Any]:
+def _adapter(data: dict[str, Any]) -> dict[str, Any]:
     controllers = []
     for controller in data.get("Controllers") or []:
         if not isinstance(controller, dict):
@@ -118,7 +117,7 @@ def _adapter(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _port(data: Dict[str, Any]) -> Dict[str, Any]:
+def _port(data: dict[str, Any]) -> dict[str, Any]:
     ethernet = data.get("Ethernet") or {}
     addresses = (
         data.get("AssociatedNetworkAddresses")
@@ -140,7 +139,7 @@ def _port(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _device_function(data: Dict[str, Any]) -> Dict[str, Any]:
+def _device_function(data: dict[str, Any]) -> dict[str, Any]:
     ethernet = data.get("Ethernet") or {}
     links = data.get("Links") or {}
     assignment = links.get("PhysicalPortAssignment")
@@ -160,10 +159,10 @@ def _device_function(data: Dict[str, Any]) -> Dict[str, Any]:
 
 async def _linked_collection(
     reader: _RedfishReader,
-    owner: Dict[str, Any],
+    owner: dict[str, Any],
     property_name: str,
     fallback_suffix: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     path = _odata_path(owner.get(property_name))
     if not path:
         links = owner.get("Links") or {}
@@ -175,7 +174,7 @@ async def _linked_collection(
     return await reader.collection(path, optional=True) if path else []
 
 
-async def _collect_one(server_id: str) -> Dict[str, Any]:
+async def _collect_one(server_id: str) -> dict[str, Any]:
     server = cfg.CONFIG.get(server_id)
     if not isinstance(server, dict):
         return {"server_id": server_id, "status": "error", "message": "Unknown server"}
@@ -214,9 +213,9 @@ async def _collect_one(server_id: str) -> Dict[str, Any]:
         ethernet_data = await reader.collection(f"{handler.SYSTEM_PATH}/EthernetInterfaces")
         network_interfaces = await reader.collection(f"{handler.SYSTEM_PATH}/NetworkInterfaces")
         chassis = await reader.collection("/redfish/v1/Chassis")
-        adapters: List[Dict[str, Any]] = []
-        ports_by_path: Dict[str, Dict[str, Any]] = {}
-        functions_by_path: Dict[str, Dict[str, Any]] = {}
+        adapters: list[dict[str, Any]] = []
+        ports_by_path: dict[str, dict[str, Any]] = {}
+        functions_by_path: dict[str, dict[str, Any]] = {}
 
         adapter_groups = await asyncio.gather(
             *(
@@ -285,15 +284,15 @@ async def _collect_one(server_id: str) -> Dict[str, Any]:
     )
 )
 async def get_network_hardware(
-    server_ids: List[str],
-    concurrency: Optional[int] = None,
-) -> Dict[str, Any]:
+    server_ids: list[str],
+    concurrency: int | None = None,
+) -> dict[str, Any]:
     cfg._load_config()
     if not isinstance(server_ids, list) or not server_ids:
         return {"status": "error", "message": "server_ids must be a non-empty list"}
     if len(server_ids) > _MAX_BATCH_SIZE:
         return {"status": "error", "message": f"At most {_MAX_BATCH_SIZE} hosts may be requested"}
-    ordered: List[str] = []
+    ordered: list[str] = []
     for value in server_ids:
         if not isinstance(value, str) or not value.strip():
             return {"status": "error", "message": "Every server_id must be non-empty"}
@@ -310,7 +309,7 @@ async def get_network_hardware(
 
     semaphore = asyncio.Semaphore(concurrency)
 
-    async def run(server_id: str) -> Dict[str, Any]:
+    async def run(server_id: str) -> dict[str, Any]:
         async with semaphore:
             return await _collect_one(server_id)
 
