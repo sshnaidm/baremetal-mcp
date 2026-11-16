@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import config as cfg
 from config import mcp
 from helpers import (
+    _dell_uefi_target_in_effect,
     _eject_virtual_media,
     _ensure_boot_once_single,
     _get_handler,
@@ -158,7 +159,12 @@ async def _wait_for_media(
         await asyncio.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
 
 
-async def _verify_boot_override(server_id: str, mode: str | None) -> dict:
+async def _verify_boot_override(
+    server_id: str,
+    mode: str | None,
+    boot_target: str = "Cd",
+    uefi_target_path: str | None = None,
+) -> dict:
     handler = await _get_handler(server_id)
     response = await _redfish_call(server_id, "GET", handler.SYSTEM_PATH)
     if response.get("status") != "success":
@@ -170,19 +176,25 @@ async def _verify_boot_override(server_id: str, mode: str | None) -> dict:
         expected_mode = "UEFI" if mode.strip().lower() == "uefi" else "Legacy"
     verified = (
         boot.get("BootSourceOverrideEnabled") == "Once"
-        and boot.get("BootSourceOverrideTarget") == "Cd"
+        and boot.get("BootSourceOverrideTarget") == boot_target
         and (expected_mode is None or boot.get("BootSourceOverrideMode") == expected_mode)
     )
+    if verified and uefi_target_path:
+        verified = await _dell_uefi_target_in_effect(server_id, handler.SYSTEM_PATH, boot, uefi_target_path)
     if not verified:
-        raise RuntimeError(
-            "BMC did not report BootSourceOverrideEnabled=Once and BootSourceOverrideTarget=Cd; reboot was not sent"
-        )
-    return {
+        expected = f"BootSourceOverrideTarget={boot_target}"
+        if uefi_target_path:
+            expected += f" with UEFI target {uefi_target_path} (active or pending)"
+        raise RuntimeError(f"BMC did not report BootSourceOverrideEnabled=Once and {expected}; reboot was not sent")
+    result = {
         "boot_source_override_enabled": boot.get("BootSourceOverrideEnabled"),
         "boot_source_override_target": boot.get("BootSourceOverrideTarget"),
         "boot_source_override_mode": boot.get("BootSourceOverrideMode"),
         "power_state": data.get("PowerState"),
     }
+    if uefi_target_path:
+        result["uefi_target_path"] = uefi_target_path
+    return result
 
 
 @mcp.tool(description="Declaratively ensure ISO/image is mounted as virtual media (idempotent), in parallel.")
@@ -433,8 +445,14 @@ async def boot_from_iso(
                         )
                     )
                 return _boot_failure(server_id, phase, ensure_result, actions, mutations)
+            boot_target = ensure_result.get("boot_target") or "Cd"
+            uefi_target_path = ensure_result.get("uefi_target_path")
+            target_label = f"{boot_target} ({uefi_target_path})" if uefi_target_path else boot_target
             boot_override_changed = "already set" not in str(ensure_result.get("message") or "").lower()
             if boot_override_changed:
+                details: dict = {"target": boot_target, "mode": mode}
+                if uefi_target_path:
+                    details["uefi_target_path"] = uefi_target_path
                 mutations.append(
                     _mutation_record(
                         "set_boot_override",
@@ -445,18 +463,17 @@ async def boot_from_iso(
                             "outcome_unknown": False,
                             "retry_safe": False,
                         },
-                        target="Cd",
-                        mode=mode,
+                        **details,
                     )
                 )
-            actions.append("Boot override set to Cd Once")
+            actions.append(f"Boot override set to {target_label} Once")
 
             boot_state = None
             if verify:
                 phase = "boot-verification"
-                boot_state = await _verify_boot_override(server_id, mode)
+                boot_state = await _verify_boot_override(server_id, mode, boot_target, uefi_target_path)
                 verification["boot"] = boot_state
-                actions.append("Verified Cd Once boot override")
+                actions.append(f"Verified {target_label} Once boot override")
 
             # Reboot if requested
             reset_request = None

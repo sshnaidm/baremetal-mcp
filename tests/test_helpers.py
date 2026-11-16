@@ -692,3 +692,203 @@ class TestEnsureBootOnceSingle:
     async def test_exception_returns_error(self) -> None:
         result = await _ensure_boot_once_single("nonexistent", "Pxe")
         assert result["status"] == "error"
+
+
+VIRTUAL_OPTICAL_PATH = "PciRoot(0x0)/Pci(0x14,0x0)/USB(0xD,0x0)/USB(0x3,0x0)/USB(0x1,0x0)"
+
+DELL_BOOT_OPTIONS_WITH_STALE_CD_ENTRY = {
+    "Members": [
+        {
+            "@odata.id": "/redfish/v1/Systems/System.Embedded.1/BootOptions/Boot0006",
+            "DisplayName": "Unavailable: Fedora",
+            "UefiDevicePath": f"{VIRTUAL_OPTICAL_PATH}/CDROM(0x1)/\\EFI\\fedora\\shimx64.efi",
+        },
+        {
+            "@odata.id": "/redfish/v1/Systems/System.Embedded.1/BootOptions/Boot0003",
+            "DisplayName": "RAID Controller in SL 3: redhat",
+            "UefiDevicePath": "HD(2,GPT,E8B37EFE-232B-4244-9A7D-280034A1CB89)/\\EFI\\redhat\\shimx64.efi",
+        },
+        {
+            "@odata.id": "/redfish/v1/Systems/System.Embedded.1/BootOptions/Boot0001",
+            "DisplayName": "Virtual Optical Drive",
+            "UefiDevicePath": VIRTUAL_OPTICAL_PATH,
+            "RelatedItem": [{"@odata.id": "/redfish/v1/Systems/System.Embedded.1/VirtualMedia"}],
+        },
+    ]
+}
+
+
+class TestEnsureBootOnceDellUefiTarget:
+    async def test_cd_uses_virtual_optical_uefi_target_not_stale_entry(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
+        patches: list[Any] = []
+
+        def system(method: str, _url: str | httpx.URL, **kwargs: object) -> httpx.Response:
+            if method == "PATCH":
+                patches.append(kwargs["json"])
+                return make_mock_response(204, content=b"")
+            return make_mock_response(200, DELL_R750_SYSTEM)
+
+        mock_redfish_client(
+            {
+                "/Systems/System.Embedded.1/BootOptions": make_mock_response(
+                    200, DELL_BOOT_OPTIONS_WITH_STALE_CD_ENTRY
+                ),
+                "/Systems/System.Embedded.1": system,
+            }
+        )
+        result = await _ensure_boot_once_single("host1", "Cd", mode="uefi")
+        assert result["status"] == "success"
+        assert result["boot_target"] == "UefiTarget"
+        assert result["uefi_target_path"] == VIRTUAL_OPTICAL_PATH
+        assert patches == [
+            {
+                "Boot": {
+                    "BootSourceOverrideEnabled": "Once",
+                    "BootSourceOverrideTarget": "UefiTarget",
+                    "UefiTargetBootSourceOverride": VIRTUAL_OPTICAL_PATH,
+                    "BootSourceOverrideMode": "UEFI",
+                }
+            }
+        ]
+
+    async def test_cd_resolves_members_without_expand(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
+        links = {"Members": [{"@odata.id": m["@odata.id"]} for m in DELL_BOOT_OPTIONS_WITH_STALE_CD_ENTRY["Members"]]}
+        routes: dict[str, Any] = {
+            "/Systems/System.Embedded.1/BootOptions": make_mock_response(200, links),
+            "/Systems/System.Embedded.1": make_mock_response(200, DELL_R750_SYSTEM),
+        }
+        for member in DELL_BOOT_OPTIONS_WITH_STALE_CD_ENTRY["Members"]:
+            routes[member["@odata.id"]] = make_mock_response(200, member)
+        mock_redfish_client(routes)
+        result = await _ensure_boot_once_single("host1", "Cd")
+        assert result["boot_target"] == "UefiTarget"
+        assert result["uefi_target_path"] == VIRTUAL_OPTICAL_PATH
+
+    async def test_legacy_mode_keeps_cd(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
+        mock_redfish_client(
+            {
+                "/Systems/System.Embedded.1/BootOptions": make_mock_response(
+                    200, DELL_BOOT_OPTIONS_WITH_STALE_CD_ENTRY
+                ),
+                "/Systems/System.Embedded.1": make_mock_response(200, DELL_R750_SYSTEM),
+            }
+        )
+        result = await _ensure_boot_once_single("host1", "Cd", mode="legacy")
+        assert result["status"] == "success"
+        assert result["boot_target"] == "Cd"
+        assert result["uefi_target_path"] is None
+
+    async def test_falls_back_to_cd_when_boot_options_unavailable(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
+        patches: list[Any] = []
+
+        def system(method: str, _url: str | httpx.URL, **kwargs: object) -> httpx.Response:
+            if method == "PATCH":
+                patches.append(kwargs["json"])
+                return make_mock_response(204, content=b"")
+            return make_mock_response(200, DELL_R750_SYSTEM)
+
+        mock_redfish_client(
+            {
+                "/Systems/System.Embedded.1/BootOptions": make_mock_response(404, {"error": "missing"}),
+                "/Systems/System.Embedded.1": system,
+            }
+        )
+        result = await _ensure_boot_once_single("host1", "Cd")
+        assert result["status"] == "success"
+        assert result["boot_target"] == "Cd"
+        assert patches[0]["Boot"]["BootSourceOverrideTarget"] == "Cd"
+        assert "UefiTargetBootSourceOverride" not in patches[0]["Boot"]
+
+    async def test_pending_bios_uefi_path_is_idempotent(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
+        pending_system = dict(
+            DELL_R750_SYSTEM,
+            Boot={
+                "BootSourceOverrideEnabled": "Once",
+                "BootSourceOverrideTarget": "UefiTarget",
+                "BootSourceOverrideMode": "UEFI",
+                "UefiTargetBootSourceOverride": None,
+            },
+        )
+        patches: list[Any] = []
+
+        def system(method: str, _url: str | httpx.URL, **kwargs: object) -> httpx.Response:
+            if method == "PATCH":
+                patches.append(kwargs["json"])
+                return make_mock_response(204, content=b"")
+            return make_mock_response(200, pending_system)
+
+        mock_redfish_client(
+            {
+                "/Systems/System.Embedded.1/BootOptions": make_mock_response(
+                    200, DELL_BOOT_OPTIONS_WITH_STALE_CD_ENTRY
+                ),
+                "/Systems/System.Embedded.1/Bios/Settings": make_mock_response(
+                    200, {"Attributes": {"OneTimeUefiBootPath": VIRTUAL_OPTICAL_PATH}}
+                ),
+                "/Systems/System.Embedded.1": system,
+            }
+        )
+        result = await _ensure_boot_once_single("host1", "Cd")
+        assert result["status"] == "success"
+        assert "already set" in result["message"]
+        assert patches == []
+
+    async def test_stale_uefi_target_is_repatched(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
+        stale_system = dict(
+            DELL_R750_SYSTEM,
+            Boot={
+                "BootSourceOverrideEnabled": "Once",
+                "BootSourceOverrideTarget": "UefiTarget",
+                "BootSourceOverrideMode": "UEFI",
+                "UefiTargetBootSourceOverride": "HD(1,GPT,AAAA)/\\EFI\\BOOT\\BOOTX64.EFI",
+            },
+        )
+        patches: list[Any] = []
+
+        def system(method: str, _url: str | httpx.URL, **kwargs: object) -> httpx.Response:
+            if method == "PATCH":
+                patches.append(kwargs["json"])
+                return make_mock_response(204, content=b"")
+            return make_mock_response(200, stale_system)
+
+        mock_redfish_client(
+            {
+                "/Systems/System.Embedded.1/BootOptions": make_mock_response(
+                    200, DELL_BOOT_OPTIONS_WITH_STALE_CD_ENTRY
+                ),
+                "/Systems/System.Embedded.1/Bios/Settings": make_mock_response(200, {"Attributes": {}}),
+                "/Systems/System.Embedded.1": system,
+            }
+        )
+        result = await _ensure_boot_once_single("host1", "Cd")
+        assert result["status"] == "success"
+        assert "Boot override set" in result["message"]
+        assert patches[0]["Boot"]["UefiTargetBootSourceOverride"] == VIRTUAL_OPTICAL_PATH
+
+    async def test_non_cd_target_does_not_query_boot_options(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
+        def boot_options(*_args: object, **_kwargs: object) -> httpx.Response:
+            raise AssertionError("BootOptions must not be queried for non-Cd targets")
+
+        mock_redfish_client(
+            {
+                "/Systems/System.Embedded.1/BootOptions": boot_options,
+                "/Systems/System.Embedded.1": make_mock_response(200, DELL_R750_SYSTEM),
+            }
+        )
+        result = await _ensure_boot_once_single("host1", "Pxe")
+        assert result["status"] == "success"
+        assert result["boot_target"] == "Pxe"

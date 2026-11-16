@@ -477,6 +477,72 @@ async def _insert_virtual_media(server_id: str, vm_path: str, image_url: str) ->
     return await _redfish_call(server_id, "POST", action, payload)
 
 
+def _is_virtual_optical_boot_option(option: dict[str, Any]) -> bool:
+    """Return True for the bare Dell iDRAC virtual optical device boot option.
+
+    Matches the device-level entry ("Virtual Optical Drive", linked to the
+    VirtualMedia collection), never OS-loader entries that live on the same
+    USB path such as ``.../CDROM(0x1)/\\EFI\\fedora\\shimx64.efi``.
+    """
+    device_path = option.get("UefiDevicePath")
+    if not isinstance(device_path, str) or not device_path.strip():
+        return False
+    if "CDROM(" in device_path or "\\" in device_path:
+        return False
+    related = option.get("RelatedItem") or []
+    if isinstance(related, list):
+        for item in related:
+            if isinstance(item, dict) and str(item.get("@odata.id", "")).rstrip("/").endswith("/VirtualMedia"):
+                return True
+    return str(option.get("DisplayName", "")).strip().lower() == "virtual optical drive"
+
+
+async def _find_dell_virtual_optical_uefi_path(server_id: str, system_path: str) -> str | None:
+    """Return the UEFI device path of the Dell virtual optical drive, or None.
+
+    Booting this exact device path (BootSourceOverrideTarget=UefiTarget) avoids
+    the generic "Cd" target, which Dell BIOS can resolve to a stale OS-loader
+    boot entry on the virtual CD and then silently fall back to the disk.
+    """
+    collection_path = f"{system_path}/BootOptions"
+    collection = await _redfish_call(server_id, "GET", f"{collection_path}?$expand=*($levels=1)")
+    if collection.get("status") != "success":
+        collection = await _redfish_call(server_id, "GET", collection_path)
+        if collection.get("status") != "success":
+            return None
+    members = (collection.get("data") or {}).get("Members") or []
+    if not isinstance(members, list):
+        return None
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        option = member
+        if "UefiDevicePath" not in member and member.get("@odata.id"):
+            details = await _redfish_call(server_id, "GET", str(member["@odata.id"]))
+            if details.get("status") != "success":
+                continue
+            option = details.get("data") or {}
+        if _is_virtual_optical_boot_option(option):
+            return str(option["UefiDevicePath"]).strip()
+    return None
+
+
+async def _dell_uefi_target_in_effect(server_id: str, system_path: str, boot: dict[str, Any], uefi_path: str) -> bool:
+    """Return True when *uefi_path* is the active or pending one-time UEFI target.
+
+    iDRAC applies UefiTargetBootSourceOverride through a BIOS configuration job,
+    so until the next POST the value shows up only as the pending BIOS attribute
+    OneTimeUefiBootPath while the system resource still reports null.
+    """
+    if boot.get("UefiTargetBootSourceOverride") == uefi_path:
+        return True
+    pending = await _redfish_call(server_id, "GET", f"{system_path}/Bios/Settings")
+    if pending.get("status") != "success":
+        return False
+    attributes = (pending.get("data") or {}).get("Attributes") or {}
+    return isinstance(attributes, dict) and attributes.get("OneTimeUefiBootPath") == uefi_path
+
+
 async def _ensure_boot_once_single(
     server_id: str,
     desired_target: str,
@@ -485,6 +551,11 @@ async def _ensure_boot_once_single(
     reboot_type: str = "GracefulRestart",
 ) -> dict:
     """Ensure next boot uses *desired_target* once for a single server.
+
+    On Dell in UEFI mode a "Cd" request is translated to a UefiTarget override
+    pointing at the virtual optical drive's exact device path (when it can be
+    discovered); the result reports the applied ``boot_target`` and
+    ``uefi_target_path``.
 
     Args:
         server_id: Target host id.
@@ -511,19 +582,35 @@ async def _ensure_boot_once_single(
         current_target = boot.get("BootSourceOverrideTarget")
         current_mode = boot.get("BootSourceOverrideMode")
 
+        boot_target = desired_target
+        uefi_path: str | None = None
+        effective_mode = desired_mode or current_mode
+        if desired_target == "Cd" and isinstance(handler, VENDOR_MAP["dell"]) and effective_mode != "Legacy":
+            uefi_path = await _find_dell_virtual_optical_uefi_path(server_id, handler.SYSTEM_PATH)
+            if uefi_path:
+                boot_target = "UefiTarget"
+            else:
+                logger.warning(
+                    f"Virtual optical UEFI boot option not found on {server_id}; falling back to Cd boot override"
+                )
+
         already = (
             current_enabled == "Once"
-            and current_target == desired_target
+            and current_target == boot_target
             and (desired_mode is None or current_mode == desired_mode)
         )
+        if already and uefi_path:
+            already = await _dell_uefi_target_in_effect(server_id, handler.SYSTEM_PATH, boot, uefi_path)
 
         if not already:
             payload: dict[str, Any] = {
                 "Boot": {
                     "BootSourceOverrideEnabled": "Once",
-                    "BootSourceOverrideTarget": desired_target,
+                    "BootSourceOverrideTarget": boot_target,
                 }
             }
+            if uefi_path:
+                payload["Boot"]["UefiTargetBootSourceOverride"] = uefi_path
             if desired_mode:
                 payload["Boot"]["BootSourceOverrideMode"] = desired_mode
 
@@ -531,10 +618,11 @@ async def _ensure_boot_once_single(
             if patch_result.get("status") != "success":
                 return {"server_id": server_id, **patch_result}
 
+        target_label = f"{boot_target} ({uefi_path})" if uefi_path else boot_target
         message = (
-            f"Boot override already set to {desired_target} Once"
+            f"Boot override already set to {target_label} Once"
             if already
-            else f"Boot override set to {desired_target} Once"
+            else f"Boot override set to {target_label} Once"
         )
 
         if reboot:
@@ -549,6 +637,8 @@ async def _ensure_boot_once_single(
             "status": "success",
             "message": message,
             "power_state": (sys_info.get("data", {}) or {}).get("PowerState"),
+            "boot_target": boot_target,
+            "uefi_target_path": uefi_path,
         }
     except Exception as e:
         return {"server_id": server_id, "status": "error", "message": str(e)}
