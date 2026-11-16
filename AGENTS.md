@@ -104,7 +104,7 @@ Hosts are defined in `redfish_servers.yaml` with metadata such as `lab`, `vendor
 ## Virtual Media & ISOs
 
 - `list_isos`: List available ISO images from `isos.yaml`.
-- `boot_from_iso`: Mount a remote ISO, verify the exact media and CD/Once state, then reboot. Verification failure stops before reset. On Dell (UEFI) both this and `ensure_boot_once` with `cd` set `UefiTarget` to the Virtual Optical Drive's device path instead of `Cd`, so stale `\EFI\...` boot entries on the virtual CD cannot hijack the one-time boot.
+- `boot_from_iso`: Mount a remote ISO, verify the exact media and CD/Once state, then reboot. Verification failure stops before reset. Optional `dell_uefi_target=true` (default off; also on `ensure_boot_once` for `cd`) makes Dell UEFI hosts boot the Virtual Optical Drive's exact device path via `UefiTarget`, for hosts where a stale `\EFI\...` entry on the virtual CD makes `Cd` fall back to the disk.
 - `inject_media` / `eject_media`: Idempotent tools to mount/unmount virtual media.
 
 ## Dell-Specific Operations

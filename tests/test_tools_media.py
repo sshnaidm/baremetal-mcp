@@ -547,7 +547,7 @@ class TestBootFromIso:
             }
         )
 
-        result = (await boot_from_iso(["host1"], IMAGE_URL))[0]
+        result = (await boot_from_iso(["host1"], IMAGE_URL, dell_uefi_target=True))[0]
 
         assert result["status"] == "success", result
         assert state["patch"]["Boot"]["BootSourceOverrideTarget"] == "UefiTarget"
@@ -599,11 +599,16 @@ class TestBootFromIso:
             }
         )
 
-        result = (await boot_from_iso(["host1"], IMAGE_URL))[0]
+        result = (await boot_from_iso(["host1"], IMAGE_URL, dell_uefi_target=True))[0]
 
         assert result["status"] == "error"
         assert result["phase"] == "boot-verification"
         assert "UefiTarget" in result["message"]
+
+    async def test_rejects_non_bool_dell_uefi_target(self) -> None:
+        result = await boot_from_iso(["host1"], IMAGE_URL, dell_uefi_target="yes")  # type: ignore[arg-type]
+        assert result[0]["status"] == "error"
+        assert result[0]["phase"] == "validation"
 
     async def test_rejects_credentialed_or_non_http_image_url(self) -> None:
         for image in ("file:///tmp/image.iso", "https://root:secret@example/image.iso"):

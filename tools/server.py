@@ -530,12 +530,15 @@ async def ensure_boot_once(
     mode: str | None = None,
     reboot: bool = False,
     reboot_type: str = "GracefulRestart",
+    dell_uefi_target: bool = False,
 ) -> list[dict]:
     """Ensure next boot uses the given target once.
 
     - target: common names accepted (pxe, cd/dvd, hdd/disk, usb) or exact Redfish enum.
     - mode: optional "UEFI" or "Legacy"; if provided, will be set.
     - reboot: if True, triggers a reset using reboot_type.
+    - dell_uefi_target: opt-in; for target cd on Dell (UEFI), boot the Virtual Optical
+      Drive's exact UEFI device path instead of the generic Cd target.
     """
 
     desired_target = _normalize_boot_target(target)
@@ -550,7 +553,14 @@ async def ensure_boot_once(
         ]
 
     tasks = [
-        _ensure_boot_once_single(sid, desired_target, mode=mode, reboot=reboot, reboot_type=reboot_type)
+        _ensure_boot_once_single(
+            sid,
+            desired_target,
+            mode=mode,
+            reboot=reboot,
+            reboot_type=reboot_type,
+            dell_uefi_target=dell_uefi_target,
+        )
         for sid in server_ids
     ]
     return await asyncio.gather(*tasks)

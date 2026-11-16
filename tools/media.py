@@ -322,18 +322,22 @@ async def boot_from_iso(
     verify: bool = True,
     verification_timeout_seconds: float = 15.0,
     concurrency: int | None = None,
+    dell_uefi_target: bool = False,
 ) -> list[dict]:
     """Ensure ISO is mounted and next boot is from CD (Once); reboot by default.
 
     - If the same ISO is already mounted, it will not re-insert.
     - If a different image is mounted, it will eject and insert the requested ISO.
     - Sets BootSourceOverride to CD Once (and optional mode) before rebooting if requested.
+    - dell_uefi_target (default False): on Dell in UEFI mode, boot the Virtual Optical
+      Drive's exact UEFI device path (UefiTarget) instead of Cd. Use when a stale
+      boot entry on the virtual CD makes Cd fall back to the disk. Adds one BIOS-job reboot.
     """
 
     normalized_ids, ids_error = _normalize_server_ids(server_ids)
     validation_error = ids_error or _validate_image_url(image_url)
-    if not isinstance(reboot, bool) or not isinstance(verify, bool):
-        validation_error = "reboot and verify must be booleans"
+    if not isinstance(reboot, bool) or not isinstance(verify, bool) or not isinstance(dell_uefi_target, bool):
+        validation_error = "reboot, verify and dell_uefi_target must be booleans"
     if mode is not None and str(mode).strip().lower() not in {"uefi", "legacy"}:
         validation_error = "mode must be uefi or legacy when provided"
     allowed_reset_types = {"On", "ForceRestart", "GracefulRestart", "PowerCycle"}
@@ -431,7 +435,9 @@ async def boot_from_iso(
                 "target": "Cd",
                 "mode": mode,
             }
-            ensure_result = await _ensure_boot_once_single(server_id, "Cd", mode=mode)
+            ensure_result = await _ensure_boot_once_single(
+                server_id, "Cd", mode=mode, dell_uefi_target=dell_uefi_target
+            )
             pending_mutation = None
             if ensure_result.get("status") != "success":
                 if any(key in ensure_result for key in ("remote_request_sent", "outcome_unknown", "retry_safe")):

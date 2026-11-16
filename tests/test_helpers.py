@@ -719,6 +719,33 @@ DELL_BOOT_OPTIONS_WITH_STALE_CD_ENTRY = {
 
 
 class TestEnsureBootOnceDellUefiTarget:
+    async def test_default_keeps_cd_without_querying_boot_options(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
+        patches: list[Any] = []
+
+        def boot_options(*_args: object, **_kwargs: object) -> httpx.Response:
+            raise AssertionError("BootOptions must not be queried unless dell_uefi_target is enabled")
+
+        def system(method: str, _url: str | httpx.URL, **kwargs: object) -> httpx.Response:
+            if method == "PATCH":
+                patches.append(kwargs["json"])
+                return make_mock_response(204, content=b"")
+            return make_mock_response(200, DELL_R750_SYSTEM)
+
+        mock_redfish_client(
+            {
+                "/Systems/System.Embedded.1/BootOptions": boot_options,
+                "/Systems/System.Embedded.1": system,
+            }
+        )
+        result = await _ensure_boot_once_single("host1", "Cd", mode="uefi")
+        assert result["status"] == "success"
+        assert result["boot_target"] == "Cd"
+        assert result["uefi_target_path"] is None
+        assert patches[0]["Boot"]["BootSourceOverrideTarget"] == "Cd"
+        assert "UefiTargetBootSourceOverride" not in patches[0]["Boot"]
+
     async def test_cd_uses_virtual_optical_uefi_target_not_stale_entry(
         self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
     ) -> None:
@@ -738,7 +765,7 @@ class TestEnsureBootOnceDellUefiTarget:
                 "/Systems/System.Embedded.1": system,
             }
         )
-        result = await _ensure_boot_once_single("host1", "Cd", mode="uefi")
+        result = await _ensure_boot_once_single("host1", "Cd", mode="uefi", dell_uefi_target=True)
         assert result["status"] == "success"
         assert result["boot_target"] == "UefiTarget"
         assert result["uefi_target_path"] == VIRTUAL_OPTICAL_PATH
@@ -764,7 +791,7 @@ class TestEnsureBootOnceDellUefiTarget:
         for member in DELL_BOOT_OPTIONS_WITH_STALE_CD_ENTRY["Members"]:
             routes[member["@odata.id"]] = make_mock_response(200, member)
         mock_redfish_client(routes)
-        result = await _ensure_boot_once_single("host1", "Cd")
+        result = await _ensure_boot_once_single("host1", "Cd", dell_uefi_target=True)
         assert result["boot_target"] == "UefiTarget"
         assert result["uefi_target_path"] == VIRTUAL_OPTICAL_PATH
 
@@ -779,7 +806,7 @@ class TestEnsureBootOnceDellUefiTarget:
                 "/Systems/System.Embedded.1": make_mock_response(200, DELL_R750_SYSTEM),
             }
         )
-        result = await _ensure_boot_once_single("host1", "Cd", mode="legacy")
+        result = await _ensure_boot_once_single("host1", "Cd", mode="legacy", dell_uefi_target=True)
         assert result["status"] == "success"
         assert result["boot_target"] == "Cd"
         assert result["uefi_target_path"] is None
@@ -801,7 +828,7 @@ class TestEnsureBootOnceDellUefiTarget:
                 "/Systems/System.Embedded.1": system,
             }
         )
-        result = await _ensure_boot_once_single("host1", "Cd")
+        result = await _ensure_boot_once_single("host1", "Cd", dell_uefi_target=True)
         assert result["status"] == "success"
         assert result["boot_target"] == "Cd"
         assert patches[0]["Boot"]["BootSourceOverrideTarget"] == "Cd"
@@ -838,7 +865,7 @@ class TestEnsureBootOnceDellUefiTarget:
                 "/Systems/System.Embedded.1": system,
             }
         )
-        result = await _ensure_boot_once_single("host1", "Cd")
+        result = await _ensure_boot_once_single("host1", "Cd", dell_uefi_target=True)
         assert result["status"] == "success"
         assert "already set" in result["message"]
         assert patches == []
@@ -872,7 +899,7 @@ class TestEnsureBootOnceDellUefiTarget:
                 "/Systems/System.Embedded.1": system,
             }
         )
-        result = await _ensure_boot_once_single("host1", "Cd")
+        result = await _ensure_boot_once_single("host1", "Cd", dell_uefi_target=True)
         assert result["status"] == "success"
         assert "Boot override set" in result["message"]
         assert patches[0]["Boot"]["UefiTargetBootSourceOverride"] == VIRTUAL_OPTICAL_PATH
@@ -889,6 +916,6 @@ class TestEnsureBootOnceDellUefiTarget:
                 "/Systems/System.Embedded.1": make_mock_response(200, DELL_R750_SYSTEM),
             }
         )
-        result = await _ensure_boot_once_single("host1", "Pxe")
+        result = await _ensure_boot_once_single("host1", "Pxe", dell_uefi_target=True)
         assert result["status"] == "success"
         assert result["boot_target"] == "Pxe"

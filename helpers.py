@@ -549,13 +549,14 @@ async def _ensure_boot_once_single(
     mode: str | None = None,
     reboot: bool = False,
     reboot_type: str = "GracefulRestart",
+    dell_uefi_target: bool = False,
 ) -> dict:
     """Ensure next boot uses *desired_target* once for a single server.
 
-    On Dell in UEFI mode a "Cd" request is translated to a UefiTarget override
-    pointing at the virtual optical drive's exact device path (when it can be
-    discovered); the result reports the applied ``boot_target`` and
-    ``uefi_target_path``.
+    When *dell_uefi_target* is True, on Dell in UEFI mode a "Cd" request is
+    translated to a UefiTarget override pointing at the virtual optical drive's
+    exact device path (when it can be discovered). The result reports the
+    applied ``boot_target`` and ``uefi_target_path``.
 
     Args:
         server_id: Target host id.
@@ -563,6 +564,8 @@ async def _ensure_boot_once_single(
         mode: Raw boot mode string ("uefi" / "legacy") — normalised internally.
         reboot: Whether to trigger a reset after setting the override.
         reboot_type: Redfish ResetType enum value.
+        dell_uefi_target: Opt-in workaround for Dell hosts where a stale OS-loader
+            boot entry on the virtual CD path hijacks the generic "Cd" target.
     """
     desired_mode = None
     if mode:
@@ -585,7 +588,12 @@ async def _ensure_boot_once_single(
         boot_target = desired_target
         uefi_path: str | None = None
         effective_mode = desired_mode or current_mode
-        if desired_target == "Cd" and isinstance(handler, VENDOR_MAP["dell"]) and effective_mode != "Legacy":
+        if (
+            dell_uefi_target
+            and desired_target == "Cd"
+            and isinstance(handler, VENDOR_MAP["dell"])
+            and effective_mode != "Legacy"
+        ):
             uefi_path = await _find_dell_virtual_optical_uefi_path(server_id, handler.SYSTEM_PATH)
             if uefi_path:
                 boot_target = "UefiTarget"
