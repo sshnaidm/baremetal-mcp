@@ -487,6 +487,129 @@ class TestBootFromIso:
         assert result["outcome_unknown"] is True
         assert result["retry_safe"] is False
 
+    async def test_dell_uses_virtual_optical_uefi_target_and_verifies_pending_bios(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
+        import config
+
+        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
+        optical = "PciRoot(0x0)/Pci(0x14,0x0)/USB(0xD,0x0)/USB(0x3,0x0)/USB(0x1,0x0)"
+        boot_options = {
+            "Members": [
+                {
+                    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/BootOptions/Boot0006",
+                    "DisplayName": "Unavailable: Fedora",
+                    "UefiDevicePath": f"{optical}/CDROM(0x1)/\\EFI\\fedora\\shimx64.efi",
+                },
+                {
+                    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/BootOptions/Boot0001",
+                    "DisplayName": "Virtual Optical Drive",
+                    "UefiDevicePath": optical,
+                    "RelatedItem": [{"@odata.id": "/redfish/v1/Systems/System.Embedded.1/VirtualMedia"}],
+                },
+            ]
+        }
+        inserted_cd = dict(DELL_R750_VM_CD, Inserted=True, Image=IMAGE_URL)
+        state: dict[str, Any] = {"patch": None, "reset": False}
+
+        def system(method: str, _url: str | httpx.URL, **kwargs: object) -> httpx.Response:
+            if method == "PATCH":
+                state["patch"] = kwargs["json"]
+                return make_mock_response(200, {"error": {"code": "Base.1.12.GeneralError"}})
+            data = dict(DELL_R750_SYSTEM)
+            data["Boot"] = dict(DELL_R750_SYSTEM["Boot"])
+            if state["patch"]:
+                # iDRAC reports the target but keeps the path null until the BIOS job runs.
+                data["Boot"].update(
+                    {
+                        "BootSourceOverrideEnabled": "Once",
+                        "BootSourceOverrideTarget": "UefiTarget",
+                        "UefiTargetBootSourceOverride": None,
+                    }
+                )
+            return make_mock_response(200, data)
+
+        def bios_settings(*_args: object, **_kwargs: object) -> httpx.Response:
+            attributes = {"OneTimeUefiBootPath": optical} if state["patch"] else {}
+            return make_mock_response(200, {"Attributes": attributes})
+
+        def reset(*_args: object, **_kwargs: object) -> httpx.Response:
+            state["reset"] = True
+            return make_mock_response(204, content=b"")
+
+        mock_redfish_client(
+            {
+                "/VirtualMedia/CD": make_mock_response(200, inserted_cd),
+                "/Systems/System.Embedded.1/BootOptions": make_mock_response(200, boot_options),
+                "/Systems/System.Embedded.1/Bios/Settings": bios_settings,
+                "/Actions/ComputerSystem.Reset": reset,
+                "/Systems/System.Embedded.1": system,
+            }
+        )
+
+        result = (await boot_from_iso(["host1"], IMAGE_URL, dell_uefi_target=True))[0]
+
+        assert result["status"] == "success", result
+        assert state["patch"]["Boot"]["BootSourceOverrideTarget"] == "UefiTarget"
+        assert state["patch"]["Boot"]["UefiTargetBootSourceOverride"] == optical
+        assert result["verification"]["boot"]["boot_source_override_target"] == "UefiTarget"
+        assert result["verification"]["boot"]["uefi_target_path"] == optical
+        assert f"Boot override set to UefiTarget ({optical}) Once" in result["message"]
+        assert state["reset"] is True
+
+    async def test_dell_uefi_target_not_applied_blocks_reset(
+        self, setup_dell_config: None, mock_redfish_client: Callable[[dict[str, Any]], MagicMock]
+    ) -> None:
+        import config
+
+        config.VIRTUAL_MEDIA_PATH_CACHE["host1"] = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
+        optical = "PciRoot(0x0)/Pci(0x14,0x0)/USB(0xD,0x0)/USB(0x3,0x0)/USB(0x1,0x0)"
+        boot_options = {
+            "Members": [
+                {
+                    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/BootOptions/Boot0001",
+                    "DisplayName": "Virtual Optical Drive",
+                    "UefiDevicePath": optical,
+                }
+            ]
+        }
+        inserted_cd = dict(DELL_R750_VM_CD, Inserted=True, Image=IMAGE_URL)
+        patched = {"done": False}
+
+        def system(method: str, _url: str | httpx.URL, **_kwargs: object) -> httpx.Response:
+            if method == "PATCH":
+                patched["done"] = True
+                return make_mock_response(204, content=b"")
+            data = dict(DELL_R750_SYSTEM)
+            data["Boot"] = dict(DELL_R750_SYSTEM["Boot"])
+            if patched["done"]:
+                data["Boot"].update({"BootSourceOverrideEnabled": "Once", "BootSourceOverrideTarget": "UefiTarget"})
+            return make_mock_response(200, data)
+
+        def reset(*_args: object, **_kwargs: object) -> httpx.Response:
+            raise AssertionError("reset must not be sent when the UEFI target is not in effect")
+
+        mock_redfish_client(
+            {
+                "/VirtualMedia/CD": make_mock_response(200, inserted_cd),
+                "/Systems/System.Embedded.1/BootOptions": make_mock_response(200, boot_options),
+                "/Systems/System.Embedded.1/Bios/Settings": make_mock_response(200, {"Attributes": {}}),
+                "/Actions/ComputerSystem.Reset": reset,
+                "/Systems/System.Embedded.1": system,
+            }
+        )
+
+        result = (await boot_from_iso(["host1"], IMAGE_URL, dell_uefi_target=True))[0]
+
+        assert result["status"] == "error"
+        assert result["phase"] == "boot-verification"
+        assert "UefiTarget" in result["message"]
+
+    async def test_rejects_non_bool_dell_uefi_target(self) -> None:
+        result = await boot_from_iso(["host1"], IMAGE_URL, dell_uefi_target="yes")  # type: ignore[arg-type]
+        assert result[0]["status"] == "error"
+        assert result[0]["phase"] == "validation"
+
     async def test_rejects_credentialed_or_non_http_image_url(self) -> None:
         for image in ("file:///tmp/image.iso", "https://root:secret@example/image.iso"):
             result = await boot_from_iso(["host1"], image)
